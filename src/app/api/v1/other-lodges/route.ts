@@ -121,6 +121,19 @@ function itemData(item: OtherLodgeUploadItem): OtherLodgeMutableFields {
   return data;
 }
 
+// True when the incoming data changes at least one stored column. Only the keys
+// present in `data` are compared, so an omitted field never counts as a change.
+// Lets the receiver skip a no-op write (and the `updatedAt` bump it would cause)
+// when a club re-uploads an unchanged row — keeping distribution incremental.
+function itemDiffers(
+  data: OtherLodgeMutableFields,
+  existing: OtherLodgeMutableFields,
+): boolean {
+  return (Object.keys(data) as (keyof OtherLodgeMutableFields)[]).some(
+    (key) => data[key] !== existing[key],
+  );
+}
+
 /**
  * POST /api/v1/other-lodges — UPLOAD from a connected club.
  *
@@ -163,18 +176,27 @@ export async function POST(req: Request) {
 
   const results: Array<{
     name: string;
-    status: "created" | "updated" | "skipped";
+    status: "created" | "updated" | "unchanged" | "skipped";
     reason?: string;
   }> = [];
   let created = 0;
   let updated = 0;
+  let unchanged = 0;
   let skipped = 0;
 
   for (const item of parsed.data.lodges) {
     const name = item.name.trim();
     const existing = await prisma.otherLodge.findUnique({
       where: { name },
-      select: { id: true, sourceClubId: true },
+      select: {
+        id: true,
+        sourceClubId: true,
+        location: true,
+        bookingOfficerName: true,
+        bookingOfficerEmail: true,
+        bookingOfficerPhone: true,
+        bedCapacity: true,
+      },
     });
 
     const now = new Date();
@@ -205,16 +227,24 @@ export async function POST(req: Request) {
         }
       }
     } else if (existing.sourceClubId === club.id) {
-      await prisma.otherLodge.update({
-        where: { id: existing.id },
-        data: {
-          ...itemData(item),
-          lastUpdatedByClubId: club.id,
-          lastUploadedAt: now,
-        },
-      });
-      updated++;
-      results.push({ name, status: "updated" });
+      const data = itemData(item);
+      // Only write (and bump `updatedAt`) when a column actually changed, so an
+      // unchanged re-upload does not churn the row or the distribution cursor.
+      if (itemDiffers(data, existing)) {
+        await prisma.otherLodge.update({
+          where: { id: existing.id },
+          data: {
+            ...data,
+            lastUpdatedByClubId: club.id,
+            lastUploadedAt: now,
+          },
+        });
+        updated++;
+        results.push({ name, status: "updated" });
+      } else {
+        unchanged++;
+        results.push({ name, status: "unchanged" });
+      }
     } else {
       skipped++;
       results.push({
@@ -231,8 +261,14 @@ export async function POST(req: Request) {
     tokenId: token.id,
     ipAddress: ip,
     userAgent: req.headers.get("user-agent"),
-    metadata: { created, updated, skipped, total: parsed.data.lodges.length },
+    metadata: {
+      created,
+      updated,
+      unchanged,
+      skipped,
+      total: parsed.data.lodges.length,
+    },
   });
 
-  return NextResponse.json({ created, updated, skipped, results });
+  return NextResponse.json({ created, updated, unchanged, skipped, results });
 }

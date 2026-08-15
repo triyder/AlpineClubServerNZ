@@ -163,6 +163,28 @@ describe("POST /api/v1/other-lodges (upload)", () => {
     expect(data).not.toHaveProperty("sourceClubId");
   });
 
+  it("reports unchanged (no write) when an owned entry is identical", async () => {
+    authenticate.mockResolvedValue(authOk(["lodges:write"]));
+    findUnique.mockResolvedValue({
+      id: "l1",
+      sourceClubId: "club_1",
+      location: "Mt Ruapehu",
+      bookingOfficerName: null,
+      bookingOfficerEmail: null,
+      bookingOfficerPhone: null,
+      bedCapacity: 20,
+    });
+    const res = await POST(
+      req("POST", url, {
+        lodges: [{ name: "Tasman Lodge", location: "Mt Ruapehu", bedCapacity: 20 }],
+      }),
+    );
+    const json = await res.json();
+    expect(json).toMatchObject({ created: 0, updated: 0, unchanged: 1, skipped: 0 });
+    expect(update).not.toHaveBeenCalled();
+    expect(json.results[0]).toMatchObject({ status: "unchanged" });
+  });
+
   it("skips an entry owned centrally or by another club (no clobber)", async () => {
     authenticate.mockResolvedValue(authOk(["lodges:write"]));
     findUnique.mockResolvedValue({ id: "l1", sourceClubId: null }); // central
