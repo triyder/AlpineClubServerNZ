@@ -23,7 +23,9 @@ export function ThemeSwitcher({ className }: { className?: string }) {
       : "system";
 
   // next-themes only knows the resolved theme after mount; render a stable
-  // default first to avoid a hydration mismatch.
+  // default first to avoid a hydration mismatch. The one-shot mount flag is the
+  // canonical pattern here, so the set-state-in-effect rule is not a concern.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   return (
@@ -62,6 +64,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
 export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   const isDark = mounted && resolvedTheme === "dark";

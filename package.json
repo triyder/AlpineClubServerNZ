@@ -51,7 +51,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24",
@@ -59,7 +58,7 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.10",
     "dotenv": "^17.4.2",
-    "eslint": "^10.8.0",
+    "eslint": "^9.37.0",
     "eslint-config-next": "16.2.12",
     "pg": "^8.22.0",
     "prisma": "7.9.1",
