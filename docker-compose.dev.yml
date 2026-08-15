@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Dev overlay — plain-HTTP browsing straight to the Next.js app (bypasses Caddy
+# and its self-signed local TLS, so no browser certificate warning).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Then browse:  http://localhost:3100
+#
+# Port 3100 (not 3000) so it never collides with a host-run `next dev` — e.g.
+# AlpineClubBookingsNZ running in dev on :3000. Override with APP_HTTP_PORT.
+#
+# Merges on top of docker-compose.yml: the base `db`/`app`/`web` services still
+# run, but `app` also publishes 3000 on the host and issues NON-Secure session
+# cookies so login works over HTTP. Never use this overlay in production.
+# ---------------------------------------------------------------------------
+services:
+  app:
+    environment:
+      # Allow the session cookie over plain HTTP (dev only).
+      SESSION_COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:${APP_HTTP_PORT:-3100}:3000"

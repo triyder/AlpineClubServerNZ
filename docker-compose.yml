@@ -1,0 +1,98 @@
+# ---------------------------------------------------------------------------
+# AlpineClubServerNZ — central hub stack
+#
+#   db  -> PostgreSQL 16 (persistent volume, health-checked)
+#   app -> Next.js server (runs migrations + seed on start, then serves :3000)
+#   web -> Caddy reverse proxy (80/443, automatic HTTPS, security headers)
+#
+# Bring the whole stack up with:  docker compose up --build
+# ---------------------------------------------------------------------------
+
+# Explicit project name so volumes/networks/containers are prefixed
+# `alpineclubservernz-` and can never collide with a co-hosted stack (e.g.
+# AlpineClubBookingsNZ, which pins `tacbookings`). Do NOT set COMPOSE_PROJECT_NAME
+# to anything else for this project — that would defeat this pin.
+name: alpineclubservernz
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alpine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: ${POSTGRES_DB:-alpineserver}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    # Host access for psql / Prisma Studio / GUIs. Bound to loopback only, and
+    # on 5433 (not 5432) so it never clashes with AlpineClubBookingsNZ's
+    # `127.0.0.1:5432`. Override the host port with DB_HOST_PORT in .env.
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
+    healthcheck:
+      # `pg_isready` returns 0 only once Postgres accepts connections, so `app`
+      # can gate its start on `service_healthy` below and never race the DB.
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alpine} -d ${POSTGRES_DB:-alpineserver}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Inside the compose network the DB host is the service name `db`.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpine}:${POSTGRES_PASSWORD:-change-me-in-production}@db:5432/${POSTGRES_DB:-alpineserver}?schema=public
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set (>=32 chars)}
+      SESSION_MAX_AGE: ${SESSION_MAX_AGE:-604800}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@alpineclub.nz}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe123!}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+    # On start: apply migrations, seed the default admin (idempotent), then
+    # launch the standalone Next server. `migrate deploy` is safe to re-run.
+    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && node server.js"
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    # Host ports are configurable so this stack can run side-by-side with
+    # AlpineClubBookingsNZ (which also fronts with Caddy on 80/443). Defaults
+    # stay 80/443 for a dedicated-host production deployment; override in .env
+    # (e.g. 8080/8443) when sharing a host.
+    ports:
+      - "${WEB_HTTP_PORT:-80}:80"
+      - "${WEB_HTTPS_PORT:-443}:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge

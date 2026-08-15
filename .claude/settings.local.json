@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"D:/Delevopement/Repos/\" 2>/dev/null; echo \"---CURRENT---\"; ls -la \"D:/Delevopement/Repos/AlpineClubServerNZ/\" 2>/dev/null)",
+      "Bash(npm -v)",
+      "Bash(npm install *)",
+      "Bash(npm install-scripts *)",
+      "Bash(npx prisma *)",
+      "Bash(mkdir -p prisma/migrations/0000_init)",
+      "Bash(echo \"exit=$?\")"
+    ]
+  }
+}

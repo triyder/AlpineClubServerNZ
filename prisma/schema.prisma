@@ -1,0 +1,128 @@
+// AlpineClubServerNZ — central hub database schema
+// Single source of truth for all database models.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum ClubStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+// ---------------------------------------------------------------------------
+// Users — operators of the central server web UI.
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email             String    @unique
+  passwordHash      String    @map("password_hash")
+  role              Role      @default(USER)
+  passwordChangedAt DateTime? @map("password_changed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Clubs this user has acted on (approvals/rejections). Optional linkage.
+  reviewedClubs Club[] @relation("ClubReviewer")
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Clubs / Lodges — client installations of AlpineClubBookingsNZ that link to
+// this central server. Go through a Pending -> Approved/Rejected lifecycle.
+// ---------------------------------------------------------------------------
+
+model Club {
+  id           String     @id @default(cuid())
+  name         String
+  code         String     @unique
+  location     String?
+  contactEmail String     @map("contact_email")
+  status       ClubStatus @default(PENDING)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  // Who approved/rejected this club, and when.
+  reviewedById String?   @map("reviewed_by_id")
+  reviewedBy   User?     @relation("ClubReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  apiTokens ApiToken[]
+  auditLogs AuditLog[]
+
+  @@index([status])
+  @@map("clubs")
+}
+
+// ---------------------------------------------------------------------------
+// API Tokens / Application Keys — issued to an approved Club so its local
+// AlpineClubBookingsNZ install can authenticate to this server. Only the hash
+// is stored; the plaintext is shown exactly once at generation time.
+// ---------------------------------------------------------------------------
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  clubId     String    @map("club_id")
+  club       Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique @map("token_hash")
+  // Short non-secret prefix (e.g. "acs_ab12cd34") for display/lookup.
+  tokenPrefix String   @map("token_prefix")
+  scopes     String[]  @default([])
+  revokedAt  DateTime? @map("revoked_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  auditLogs AuditLog[]
+
+  @@index([clubId])
+  @@index([tokenPrefix])
+  @@map("api_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Audit Logs — record connections and requests made by client applications
+// (and notable admin actions), for oversight and abuse investigation.
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String       @id @default(cuid())
+  action    String
+  outcome   AuditOutcome @default(SUCCESS)
+  clubId    String?      @map("club_id")
+  club      Club?        @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  tokenId   String?      @map("token_id")
+  token     ApiToken?    @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  ipAddress String?      @map("ip_address")
+  userAgent String?      @map("user_agent")
+  // Free-form structured context (request path, sync counts, error, ...).
+  metadata  Json?
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([clubId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

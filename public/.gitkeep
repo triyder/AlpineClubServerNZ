@@ -1,0 +1,3 @@
+# Static assets served at the site root live here (favicons, images, robots.txt).
+# Kept in version control so the production Docker build's `COPY /app/public`
+# step always has a directory to copy.

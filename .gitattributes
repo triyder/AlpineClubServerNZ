@@ -1,0 +1,13 @@
+# Normalize line endings to LF in the repository (avoids CRLF churn across
+# Windows/macOS/Linux; keeps shell scripts and the Dockerfile LF-clean).
+* text=auto eol=lf
+
+# Binary assets should never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary

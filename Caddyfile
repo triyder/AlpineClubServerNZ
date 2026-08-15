@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------------
+# AlpineClubServerNZ — Caddy reverse proxy
+#
+# Fronts the Next.js app (`app:3000`) with automatic HTTPS and a baseline set
+# of security headers. {$DOMAIN} is supplied by docker-compose; set it to
+# `localhost` for local testing (Caddy serves a local CA cert) or a real
+# hostname in production (Caddy provisions a Let's Encrypt certificate).
+# ---------------------------------------------------------------------------
+{$DOMAIN} {
+	encode gzip zstd
+
+	header {
+		# Clickjacking / MIME-sniffing / referrer / transport hardening.
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		# Remove server-identifying headers.
+		-Server
+		-X-Powered-By
+	}
+
+	# Reject oversized request bodies at the edge before they reach the app.
+	request_body {
+		max_size 10MB
+	}
+
+	# All traffic is proxied to the Node app. Caddy terminates TLS and speaks
+	# plain HTTP to the app over the internal docker network.
+	reverse_proxy app:3000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
