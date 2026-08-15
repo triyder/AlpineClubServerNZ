@@ -79,9 +79,9 @@ This replicates the AlpineClubBookingsNZ "Other lodges" admin panel, but here it
 is the **shared source of truth**. Admins manage the registry at `/lodges`
 (`/api/admin/other-lodges` CRUD) and toggle `distribute` per row. The end goal:
 connected clubs upload their entries, admins mark rows for distribution, and
-marked rows are handed back out to every club connected via its API key. The
-admin registry + distribution flag are implemented on the server; the client
-upload and pull-distribution endpoints are the next step.
+marked rows are handed back out to every club connected via its API key. Both
+the admin registry and the client upload/pull endpoints are implemented — see
+**Distribution loop** under the REST API section below.
 
 Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
 [`prisma/migrations/0000_init`](prisma/migrations/0000_init).
@@ -130,7 +130,23 @@ signs the user out to re-authenticate with the new credentials.
 | ---------------------------- | ----------- | ----------------------------------------- |
 | `POST /api/v1/clubs/register`| none (rate-limited) | Request linking. Creates a `PENDING` club. |
 | `POST /api/v1/sync`          | Bearer token | Push/pull sync batch for an approved club. |
+| `POST /api/v1/other-lodges`  | Bearer token (`lodges:write`) | Upload the club's "Other lodges" entries. |
+| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull all entries marked for distribution. |
 | `GET  /api/health`           | none        | Liveness + DB connectivity probe.          |
+
+### Distribution loop
+
+1. A connected club **uploads** its entries: `POST /api/v1/other-lodges` with
+   `{ "lodges": [ { "name": "...", "location": "...", "bedCapacity": 20 } ] }`.
+   Each entry is keyed by unique `name` and **owned** by the uploading club —
+   new names are created (`distribute = false`), the club's own entries are
+   updated, and names owned centrally or by another club are **skipped** (no
+   clobber). Uploads never set the distribution marker.
+2. A **central admin** reviews `/lodges` and toggles `distribute` on the entries
+   that should be shared.
+3. Every connected club **pulls** the distributed set: `GET /api/v1/other-lodges`
+   returns all `distribute = true` entries. Pass `?since=<ISO>` for an
+   incremental pull; use the response `cursor` as the next `since`.
 
 Admin-only:
 

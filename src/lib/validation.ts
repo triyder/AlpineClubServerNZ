@@ -42,6 +42,9 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 /** Admin-issued token creation. */
 export const createTokenSchema = z.object({
   name: z.string().min(1).max(120),
-  scopes: z.array(z.string().min(1).max(60)).max(50).default(["sync:read", "sync:write"]),
+  scopes: z
+    .array(z.string().min(1).max(60))
+    .max(50)
+    .default(["sync:read", "sync:write", "lodges:read", "lodges:write"]),
 });
 export type CreateTokenInput = z.infer<typeof createTokenSchema>;

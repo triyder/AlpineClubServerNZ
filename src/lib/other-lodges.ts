@@ -101,6 +101,56 @@ export const otherLodgeCreateSchema = z
   .strict();
 export type OtherLodgeCreateInput = z.infer<typeof otherLodgeCreateSchema>;
 
+/**
+ * Client-facing shape returned by the PULL endpoint (`GET /api/v1/other-lodges`).
+ * Deliberately omits `distribute` and `sourceClub`: a pulling club only needs
+ * the lodge data, not which club submitted it or the internal marker. `id` and
+ * `updatedAt` let clients dedupe and sync incrementally.
+ */
+export interface DistributedOtherLodge {
+  id: string;
+  name: string;
+  location: string | null;
+  bookingOfficerName: string | null;
+  bookingOfficerEmail: string | null;
+  bookingOfficerPhone: string | null;
+  bedCapacity: number | null;
+  updatedAt: string;
+}
+
+export function serializeOtherLodgeForClient(
+  lodge: OtherLodgeRecord,
+): DistributedOtherLodge {
+  return {
+    id: lodge.id,
+    name: lodge.name,
+    location: lodge.location,
+    bookingOfficerName: lodge.bookingOfficerName,
+    bookingOfficerEmail: lodge.bookingOfficerEmail,
+    bookingOfficerPhone: lodge.bookingOfficerPhone,
+    bedCapacity: lodge.bedCapacity,
+    updatedAt: lodge.updatedAt.toISOString(),
+  };
+}
+
+// A single lodge entry a client uploads. Note: `distribute` is intentionally
+// NOT accepted from clients — only a central admin marks a row for distribution.
+export const otherLodgeUploadItemSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    location: z.string().trim().max(300).nullable().optional(),
+    bookingOfficerName: z.string().trim().max(200).nullable().optional(),
+    bookingOfficerEmail: optionalEmail,
+    bookingOfficerPhone: z.string().trim().max(50).nullable().optional(),
+    bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
+  })
+  .strict();
+export type OtherLodgeUploadItem = z.infer<typeof otherLodgeUploadItemSchema>;
+
+export const otherLodgeUploadSchema = z.object({
+  lodges: z.array(otherLodgeUploadItemSchema).min(1).max(500),
+});
+
 export const otherLodgeUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
