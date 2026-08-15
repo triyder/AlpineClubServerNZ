@@ -37,3 +37,11 @@ prisma/*.db
 
 # typescript
 *.tsbuildinfo
+
+# stray curl / manual-test scratch artifacts (cookie jars, dumps)
+/c.txt
+/cookies.txt
+/headers.txt
+/body.txt
+/*.html
+*.cookie

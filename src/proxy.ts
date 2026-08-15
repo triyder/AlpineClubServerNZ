@@ -11,7 +11,7 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth/session-token";
  * The `/api/v1/*` client API authenticates via bearer token inside each route
  * handler and is deliberately NOT matched here.
  */
-const PROTECTED_PREFIXES = ["/dashboard", "/clubs", "/profile"];
+const PROTECTED_PREFIXES = ["/dashboard", "/clubs", "/lodges", "/profile"];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -33,5 +33,10 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/clubs/:path*", "/profile/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/clubs/:path*",
+    "/lodges/:path*",
+    "/profile/:path*",
+  ],
 };

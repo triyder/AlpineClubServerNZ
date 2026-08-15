@@ -71,6 +71,8 @@ model Club {
 
   apiTokens ApiToken[]
   auditLogs AuditLog[]
+  // "Other lodges" this club uploaded to the central registry (provenance).
+  submittedOtherLodges OtherLodge[] @relation("OtherLodgeSource")
 
   @@index([status])
   @@map("clubs")
@@ -125,4 +127,41 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Other Lodges — the central registry of external / partner lodges. Replicates
+// the AlpineClubBookingsNZ "Other lodges" admin panel, but here it is the
+// SHARED source of truth: connected clubs upload their entries, admins mark
+// rows for distribution, and marked rows are handed back out to every connected
+// club via the clubs API key.
+//
+// `name` is unique so the registry backs a name-first list / drop-down.
+// `distribute` is the marker that a row should be pushed out to all clubs.
+// `sourceClub` records which club uploaded it (null = created centrally).
+// ---------------------------------------------------------------------------
+
+model OtherLodge {
+  id                  String   @id @default(cuid())
+  name                String   @unique
+  location            String?  @db.VarChar(300)
+  bookingOfficerName  String?  @map("booking_officer_name") @db.VarChar(200)
+  bookingOfficerEmail String?  @map("booking_officer_email") @db.VarChar(320)
+  bookingOfficerPhone String?  @map("booking_officer_phone") @db.VarChar(50)
+  bedCapacity         Int?     @map("bed_capacity")
+
+  // Distribution marker: true = include when distributing to connected clubs.
+  distribute Boolean @default(false)
+
+  // Provenance: the club that uploaded this entry (null = created centrally by
+  // an admin on this server). SetNull so removing a club keeps the lodge.
+  sourceClubId String? @map("source_club_id")
+  sourceClub   Club?   @relation("OtherLodgeSource", fields: [sourceClubId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([distribute])
+  @@index([sourceClubId])
+  @@map("other_lodges")
 }

@@ -71,6 +71,17 @@ npm run dev           # http://localhost:3000
 | `Club`     | A linked lodge/club. Lifecycle: `PENDING → APPROVED / REJECTED`.         |
 | `ApiToken` | API keys issued to an approved club. Only the SHA-256 hash is stored.   |
 | `AuditLog` | Records client connections/requests and notable admin actions.          |
+| `OtherLodge` | Central registry of external/partner lodges. `distribute` marks a row for hand-out to connected clubs; `sourceClub` records which club uploaded it. |
+
+### "Other lodges" distribution (in progress)
+
+This replicates the AlpineClubBookingsNZ "Other lodges" admin panel, but here it
+is the **shared source of truth**. Admins manage the registry at `/lodges`
+(`/api/admin/other-lodges` CRUD) and toggle `distribute` per row. The end goal:
+connected clubs upload their entries, admins mark rows for distribution, and
+marked rows are handed back out to every club connected via its API key. The
+admin registry + distribution flag are implemented on the server; the client
+upload and pull-distribution endpoints are the next step.
 
 Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
 [`prisma/migrations/0000_init`](prisma/migrations/0000_init).
@@ -103,6 +114,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/register`  | public        | Lodge submits a link request.                                  |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys.          |
+| `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete + mark for distribution. |
 | `/profile`   | session       | Account info, **change password**, **light/dark theme**, sign out. |
 
 The console header carries a quick light/dark toggle; `/profile` has the full
