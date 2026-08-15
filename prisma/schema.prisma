@@ -73,6 +73,8 @@ model Club {
   auditLogs AuditLog[]
   // "Other lodges" this club uploaded to the central registry (provenance).
   submittedOtherLodges OtherLodge[] @relation("OtherLodgeSource")
+  // "Other lodges" this club most recently pushed an update to.
+  updatedOtherLodges OtherLodge[] @relation("OtherLodgeLastUpdatedBy")
 
   @@index([status])
   @@map("clubs")
@@ -157,6 +159,12 @@ model OtherLodge {
   // an admin on this server). SetNull so removing a club keeps the lodge.
   sourceClubId String? @map("source_club_id")
   sourceClub   Club?   @relation("OtherLodgeSource", fields: [sourceClubId], references: [id], onDelete: SetNull)
+
+  // Change tracking: the club that most recently uploaded a change to this
+  // entry, and when. Stamped on every client upload (create or update).
+  lastUpdatedByClubId String?   @map("last_updated_by_club_id")
+  lastUpdatedByClub   Club?     @relation("OtherLodgeLastUpdatedBy", fields: [lastUpdatedByClubId], references: [id], onDelete: SetNull)
+  lastUploadedAt      DateTime? @map("last_uploaded_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

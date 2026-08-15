@@ -177,6 +177,7 @@ export async function POST(req: Request) {
       select: { id: true, sourceClubId: true },
     });
 
+    const now = new Date();
     if (!existing) {
       try {
         await prisma.otherLodge.create({
@@ -184,6 +185,8 @@ export async function POST(req: Request) {
             name,
             ...itemData(item),
             sourceClubId: club.id,
+            lastUpdatedByClubId: club.id,
+            lastUploadedAt: now,
             distribute: false,
           },
         });
@@ -204,7 +207,11 @@ export async function POST(req: Request) {
     } else if (existing.sourceClubId === club.id) {
       await prisma.otherLodge.update({
         where: { id: existing.id },
-        data: itemData(item),
+        data: {
+          ...itemData(item),
+          lastUpdatedByClubId: club.id,
+          lastUploadedAt: now,
+        },
       });
       updated++;
       results.push({ name, status: "updated" });

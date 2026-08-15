@@ -114,7 +114,8 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/register`  | public        | Lodge submits a link request.                                  |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys.          |
-| `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete + mark for distribution. |
+| `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, mark for distribution, and see which club last updated each entry. |
+| `/audit`     | admin/manager | **Audit log** — all activity in and out of the server (client uploads/pulls, connections, admin actions), filterable + paginated. |
 | `/profile`   | session       | Account info, **change password**, **light/dark theme**, sign out. |
 
 The console header carries a quick light/dark toggle; `/profile` has the full

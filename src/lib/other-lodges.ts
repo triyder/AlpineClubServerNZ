@@ -18,6 +18,9 @@ export const otherLodgeSelect = {
   distribute: true,
   sourceClubId: true,
   sourceClub: { select: { id: true, name: true, code: true } },
+  lastUpdatedByClubId: true,
+  lastUpdatedByClub: { select: { id: true, name: true, code: true } },
+  lastUploadedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.OtherLodgeSelect;
@@ -36,6 +39,8 @@ export interface SerializedOtherLodge {
   bedCapacity: number | null;
   distribute: boolean;
   sourceClub: { id: string; name: string; code: string } | null;
+  lastUpdatedByClub: { id: string; name: string; code: string } | null;
+  lastUploadedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +63,16 @@ export function serializeOtherLodge(
           name: lodge.sourceClub.name,
           code: lodge.sourceClub.code,
         }
+      : null,
+    lastUpdatedByClub: lodge.lastUpdatedByClub
+      ? {
+          id: lodge.lastUpdatedByClub.id,
+          name: lodge.lastUpdatedByClub.name,
+          code: lodge.lastUpdatedByClub.code,
+        }
+      : null,
+    lastUploadedAt: lodge.lastUploadedAt
+      ? lodge.lastUploadedAt.toISOString()
       : null,
     createdAt: lodge.createdAt.toISOString(),
     updatedAt: lodge.updatedAt.toISOString(),

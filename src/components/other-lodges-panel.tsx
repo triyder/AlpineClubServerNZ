@@ -404,13 +404,23 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                         {lodge.bedCapacity ?? "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {lodge.sourceClub ? (
-                          <span title={lodge.sourceClub.code}>
-                            {lodge.sourceClub.name}
-                          </span>
-                        ) : (
-                          <span className="text-xs">central</span>
-                        )}
+                        <div>
+                          {lodge.sourceClub ? (
+                            <span title={lodge.sourceClub.code}>
+                              {lodge.sourceClub.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs">central</span>
+                          )}
+                          {lodge.lastUpdatedByClub ? (
+                            <div className="text-xs">
+                              updated by {lodge.lastUpdatedByClub.name}
+                              {lodge.lastUploadedAt
+                                ? ` · ${lodge.lastUploadedAt.slice(0, 10)}`
+                                : ""}
+                            </div>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {canManage ? (

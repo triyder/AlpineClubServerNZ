@@ -28,6 +28,9 @@ export function ConsoleShell({
               <Link href="/lodges" className="hover:text-foreground">
                 Lodges
               </Link>
+              <Link href="/audit" className="hover:text-foreground">
+                Audit
+              </Link>
               <Link href="/profile" className="hover:text-foreground">
                 Profile
               </Link>
