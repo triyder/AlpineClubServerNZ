@@ -3,7 +3,12 @@ import { headers } from "next/headers";
 import { getSession } from "@/lib/auth/session";
 import { ConsoleShell } from "@/components/console-shell";
 import { PostsPanel, type AdminPostRow } from "@/components/posts-panel";
-import { listPostsForAdmin, parseTab } from "@/lib/post-admin";
+import {
+  convergenceSince,
+  listClubSyncState,
+  listPostsForAdmin,
+  parseTab,
+} from "@/lib/post-admin";
 import { serializePostForAdmin } from "@/lib/posts";
 import { publicBaseUrl } from "@/lib/env";
 
@@ -31,7 +36,10 @@ export default async function PostsPage({
   const tab = parseTab(params.tab ?? null);
   const q = params.q?.trim() || undefined;
 
-  const rows = await listPostsForAdmin({ tab, q, limit: 50 });
+  const [rows, clubs] = await Promise.all([
+    listPostsForAdmin({ tab, q, limit: 50 }),
+    listClubSyncState(),
+  ]);
 
   // publicBaseUrl needs the proxy headers to build absolute image URLs; in a
   // server component they come from headers() rather than a Request.
@@ -45,6 +53,11 @@ export default async function PostsPage({
     breakdown: row.breakdown,
     reportingClubs: row.reportingClubs,
     notes: row.notes,
+    // Only meaningful once the post has been hidden: it answers "have the
+    // clubs actually stopped showing this yet?".
+    convergence: row.post.hiddenAt
+      ? convergenceSince(clubs, row.post.hiddenAt)
+      : null,
   }));
 
   return (

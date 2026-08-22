@@ -26,6 +26,7 @@ export interface AdminPostRow {
   breakdown: { reason: string; count: number }[];
   reportingClubs: { id: string; name: string; code: string }[];
   notes: { reason: string; details: string; clubCode: string }[];
+  convergence: { total: number; synced: number; pending: string[] } | null;
 }
 
 const TABS: { key: Tab; label: string; hint: string }[] = [
@@ -349,6 +350,19 @@ export function PostsPanel({
                       Remove from network
                     </Button>
                   </div>
+
+                  {row.convergence && (
+                    <p className="text-xs text-muted-foreground">
+                      {/* Hiding only publishes a signal; each club acts on it
+                          at its next sync. Until then it is still on screen
+                          for that club's members. */}
+                      {row.convergence.synced} of {row.convergence.total} club
+                      {row.convergence.total === 1 ? "" : "s"} synced since this
+                      was hidden
+                      {row.convergence.pending.length > 0 &&
+                        ` · still to pick it up: ${row.convergence.pending.join(", ")}`}
+                    </p>
+                  )}
 
                   <p className="text-xs text-muted-foreground">
                     {row.club.name} · author {row.authorUserId}

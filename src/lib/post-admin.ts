@@ -141,31 +141,58 @@ export async function listPostsForAdmin(
   });
 }
 
+export interface ClubSyncState {
+  id: string;
+  name: string;
+  code: string;
+  lastCommsSyncAt: Date | null;
+}
+
 /**
- * How many approved clubs have pulled the sync feed since a given moment, and
- * which have not.
+ * Every approved club and when it last pulled the sync feed.
  *
- * This is what turns "I removed it" into "it is actually gone": removing a post
- * only publishes a signal, and each club acts on it at its next sync. Counted
- * from `Club.lastCommsSyncAt`, which only the sync endpoint stamps — using
- * `ApiToken.lastUsedAt` would count a club that merely pulled the lodge
- * registry and overstate convergence.
+ * Fetched once per page render rather than per post, so the convergence line on
+ * a queue of fifty hidden posts costs one query rather than fifty.
  */
-export async function syncConvergence(since: Date) {
-  const clubs = await prisma.club.findMany({
+export function listClubSyncState(): Promise<ClubSyncState[]> {
+  return prisma.club.findMany({
     where: { status: "APPROVED" },
     select: { id: true, name: true, code: true, lastCommsSyncAt: true },
     orderBy: { name: "asc" },
   });
+}
 
-  const synced = clubs.filter(
-    (c) => c.lastCommsSyncAt !== null && c.lastCommsSyncAt >= since,
-  );
+export interface Convergence {
+  total: number;
+  synced: number;
+  /** Clubs that have NOT pulled since — named, so this is actionable. */
+  pending: string[];
+}
+
+/**
+ * How many clubs have pulled the feed since a post was hidden or removed.
+ *
+ * This is what separates "I removed it" from "it is actually gone": removing a
+ * post only publishes a signal, and each club acts on it at its next sync. A
+ * club that has not synced is still showing the post to its members.
+ *
+ * Counted from `lastCommsSyncAt`, which only the sync endpoint stamps. Using
+ * `ApiToken.lastUsedAt` would count a club that merely pulled the lodge
+ * registry and overstate convergence — the one number that must not be
+ * optimistic here.
+ */
+export function convergenceSince(
+  clubs: ClubSyncState[],
+  since: Date,
+): Convergence {
   const pending = clubs.filter(
     (c) => c.lastCommsSyncAt === null || c.lastCommsSyncAt < since,
   );
-
-  return { total: clubs.length, synced: synced.length, pending };
+  return {
+    total: clubs.length,
+    synced: clubs.length - pending.length,
+    pending: pending.map((c) => c.code),
+  };
 }
 
 /**
