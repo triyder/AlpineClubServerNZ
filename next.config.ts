@@ -6,8 +6,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
-  // Prisma's query engine and bcrypt are native; keep them out of the bundle.
-  serverExternalPackages: ["@prisma/client", "bcryptjs"],
+  // Prisma's query engine, bcrypt and sharp are native; keep them out of
+  // the bundle so the standalone build loads them from node_modules.
+  serverExternalPackages: ["@prisma/client", "bcryptjs", "sharp"],
 };
 
 export default nextConfig;

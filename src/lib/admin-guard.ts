@@ -15,3 +15,19 @@ export async function requireManager(): Promise<SessionPayload> {
   }
   return session;
 }
+
+/**
+ * Assert an authenticated ADMIN session — stricter than `requireManager`, which
+ * also admits MANAGER.
+ *
+ * The Communication Portal is admin-only: moderating the cross-club feed means
+ * editing and permanently removing other clubs' members' content, so it is not
+ * delegated to the manager tier that reviews clubs and issues tokens.
+ */
+export async function requireAdmin(): Promise<SessionPayload> {
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error("Not authorized");
+  }
+  return session;
+}
