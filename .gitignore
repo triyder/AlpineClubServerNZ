@@ -31,6 +31,9 @@ yarn-error.log*
 # prisma
 prisma/*.db
 
+# locally-stored post images (Docker uses a named volume)
+/data
+
 # caddy runtime state (docker volumes hold the real data)
 /caddy_data
 /caddy_config
