@@ -46,6 +46,12 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
 
+# Mountpoint for the uploads volume (Communication Portal images). Created and
+# chowned BEFORE `USER nextjs` so the unprivileged runtime user can write to it
+# — Docker gives a fresh named volume the ownership of its mountpoint, so a
+# root-owned directory here would leave every image upload failing with EACCES.
+RUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
+
 # Standalone server + static assets.
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
