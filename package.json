@@ -30,7 +30,8 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "seed:demo": "tsx prisma/demo-seed.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.9.1",
