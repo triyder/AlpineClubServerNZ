@@ -1,7 +1,7 @@
 # Communication Portal — implementation spec
 
-**Status:** decisions settled, ready to build · **Rev B** · 22 Aug 2026
-**Supersedes:** the original "multi-club Communication Portal" brief
+**Status:** ready to build · **Rev C** · 22 Aug 2026
+**Supersedes:** the original "multi-club Communication Portal" brief, and spec rev A/B
 **Migration:** `0004_posts`
 **Rendered copy:** https://claude.ai/code/artifact/5a28de3b-4d65-44a6-ae57-c1648f800c24
 
@@ -9,7 +9,28 @@ A cross-club member feed with image posts, member reporting, and central
 moderation. The original brief assumed a Node/Express stack that this
 repository does not run; this document rewrites it against Next.js 16 App
 Router + Prisma 7 + PostgreSQL 16, following the conventions already
-established in `src/lib`.
+established in `src/lib` — and against the ServerNZ integration the
+AlpineClubBookingsNZ client already has.
+
+## Rev C — four changes, driven by reading the booking client
+
+The client repo already has `servernz-api.ts`, a cursor-based
+`servernz-other-lodges-sync.ts`, a single-flight `servernz-sync-claim.ts`, and an
+`/api/cron/alpine-server-sync` route. It will **mirror** this feed into its own
+database the same way it mirrors Other Lodges, not render it live from a browser
+widget. That reshapes four things:
+
+1. **New `GET /api/v1/feed/sync`** — a forward cursor for mirroring.
+   `/api/v1/feed` keeps its backward keyset for direct browsing.
+2. **Removals now propagate.** A cursor pull of *visible* posts can never tell a
+   mirror that a post was hidden or deleted — it silently stops appearing and the
+   mirror shows it forever. Solved without a tombstone table (§7).
+3. **SSE is gone.** With the browser never talking to ServerNZ, the EventSource
+   auth problem evaporates and a held-open connection per club install is worse
+   than a cursor poll on the cron the client already runs. This also removes the
+   only Caddyfile change the feature needed.
+4. **The cleanup lock is corrected.** Rev B used `pg_try_advisory_lock`; the
+   client repo documents why that is wrong under Prisma (§9).
 
 ---
 
@@ -33,7 +54,7 @@ exist here.
 | 10 MB per image, 4 images | 4 images, **9 MB combined** | Decision to leave the Caddy 10 MB body cap alone. |
 | Pages at `/admin/posts` | Pages at `/posts` and `/settings` | Console pages are top-level here; `/admin` is the JSON API namespace. |
 | Feed paginated on `created_at` | Keyset on `(createdAt, id)` | Same-millisecond posts straddling a page boundary are otherwise dropped. |
-| Cron "daily at 02:00 UTC" | Explicit `{ timezone: "UTC" }` + advisory lock | The container sets `TZ=Pacific/Auckland`, so the naive schedule fires ~12 hours early. |
+| Cron "daily at 02:00 UTC" | Explicit `{ timezone: "UTC" }` + a status-guarded claim | The container sets `TZ=Pacific/Auckland`, so the naive schedule fires ~12 hours early. |
 
 ---
 
@@ -182,9 +203,15 @@ model Post {
   // post simply restarts the countdown and it re-hides at the next 3 reports.
   autoHideExempt Boolean @default(false) @map("auto_hide_exempt")
 
-  // Admin soft delete. Removed from every feed but recoverable; hard delete is
-  // a separate, destructive console action that purges rows and files.
+  // Admin soft delete. Gone from every feed, recoverable, files retained.
   deletedAt    DateTime?     @map("deleted_at")
+
+  // Hard delete. Content is blanked and every image file is unlinked AT ONCE —
+  // the objectionable material is gone immediately. What survives is a stub row
+  // carrying nothing but id/clubId/scope/timestamps, which IS the tombstone that
+  // tells mirroring clients to drop their copy. The stub is pruned by the
+  // retention job once posts.tombstone_horizon_days has passed.
+  purgedAt     DateTime?     @map("purged_at")
 
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt      @map("updated_at")
@@ -194,6 +221,8 @@ model Post {
 
   // Feed keyset pagination is ordered by (createdAt DESC, id DESC).
   @@index([createdAt(sort: Desc), id(sort: Desc)])
+  // The mirroring cursor: GET /api/v1/feed/sync orders by (updatedAt, id) ASC.
+  @@index([updatedAt, id])
   @@index([scope, clubId])
   @@index([reportCount])
   // Drives the console's Hidden tab.
@@ -267,6 +296,18 @@ model SystemSetting {
   @@map("system_settings")
 }
 
+// Single-flight claim for scheduled jobs. Two lines, properly typed, and it
+// keeps the claim OUT of SystemSetting (whose value column is a String — a
+// timestamp claim there would rest on ISO strings sorting lexicographically,
+// which is true but too clever to rely on). See §9 for why this rather than a
+// Postgres advisory lock.
+model JobClaim {
+  name      String    @id
+  startedAt DateTime? @map("started_at")
+
+  @@map("job_claims")
+}
+
 // --- add to the existing Club model -------------------------------------
   posts       Post[]
   postReports PostReport[] @relation("PostReportClub")
@@ -283,10 +324,12 @@ model SystemSetting {
 | `posts.retention_days` | int | 365 | `0` disables pruning entirely |
 | `posts.auto_hide_threshold` | int | 3 | Open reports needed to auto-hide |
 | `posts.auto_hide_min_clubs` | int | 1 | Distinct reporting clubs also required. `1` = any club; raise to 2 if flag abuse appears |
+| `posts.tombstone_horizon_days` | int | 90 | How long a purged post's stub row survives so mirrors can converge. Must exceed the longest plausible client outage (§7) |
 
-Seed these in `prisma/seed.ts` alongside the existing idempotent admin seed, and
-have `src/lib/settings.ts` fall back to the same defaults so a missing row is
-never fatal. The retention dropdown maps to 90 / 183 / 365 / 730 / 1826 / 0 days.
+Seed these in `prisma/seed.ts` alongside the existing idempotent admin seed,
+together with the `posts.cleanup` `JobClaim` row — the guarded claim in §9 never
+fires if its row is absent. Have `src/lib/settings.ts` fall back to the same
+defaults so a missing setting row is never fatal. The retention dropdown maps to 90 / 183 / 365 / 730 / 1826 / 0 days.
 
 ### Migration
 
@@ -457,7 +500,8 @@ Response — `serializePostForClient()`:
   whole request and unlinks anything already written.
 - `clubId` from the token. Post row and image rows created in one
   `prisma.$transaction` after all files are safely on disk.
-- Broadcast `post_created` to eligible SSE subscribers.
+- No broadcast step. Mirrors pick the post up on their next
+  `/api/v1/feed/sync` pass.
 - `recordAudit({ action: "post.create", … })`.
 
 **On "sanitize to prevent XSS":** there is no sanitiser in the dependency tree
@@ -517,10 +561,8 @@ const result = await prisma.$transaction(async (tx) => {
   return { status: "recorded", hidden: shouldHide, post } as const
 })
 
-// Broadcast AFTER the transaction commits, never inside it.
-if (result.status === "recorded" && result.hidden) {
-  broadcastPostRemoved(result.post, "hidden")
-}
+// Nothing to push. The update bumped `updatedAt`, so the next /feed/sync
+// pass from each club carries { state: "removed", reason: "hidden" }.
 ```
 
 Responses: `200 { status: "recorded" | "duplicate", hidden: boolean }`, `404` if
@@ -543,80 +585,141 @@ id, so a long cache is safe and a deleted post's URL simply starts 404ing.
 
 ---
 
-## 7. Live updates — `GET /api/v1/feed/stream`, `posts:read`
+## 7. Mirroring and convergence
 
-### Blocker — EventSource cannot authenticate
+The booking client keeps its own copy of the feed and renders from it. This
+section defines the endpoint that keeps that copy correct — including the part
+the brief never addressed: how a mirror learns that something was *removed*.
 
-The browser `EventSource` API cannot set request headers, so it cannot present an
-API key. Two workable paths:
+### `GET /api/v1/feed/sync` — `posts:read`
 
-- **Preferred — fetch-based reader.** The client calls `fetch()` with the
-  `Authorization` header and reads the `ReadableStream`, parsing SSE frames
-  itself. ~40 lines, works in Electron and every current browser, and needs no
-  server concessions.
-- **Fallback — one-time stream ticket.** An authenticated
-  `POST /api/v1/feed/stream/ticket` returns a 60-second single-use token which
-  `EventSource` passes as a query parameter.
+A forward cursor over `updatedAt`, mirroring the contract
+`GET /api/v1/other-lodges?since=` already uses, so the client's existing sync
+code has a shape to copy. Separate from `/api/v1/feed` because the two answer
+different questions: `/feed` is "show me visible posts, newest first" for a
+client that renders live; `/feed/sync` is "what changed since I last asked",
+removals included.
 
-Do **not** put the API key itself in a query string — the Caddyfile logs every
-request line to stdout, so the key would land in the container logs.
+| Param | Type | Notes |
+| --- | --- | --- |
+| `since` | ISO 8601 | Omit for a full initial sync |
+| `limit` | int 1–200 | Default 100 |
 
-```ts
-// src/lib/post-events.ts
-// In-process subscriber registry. Single-container deployment only —
-// the same constraint src/lib/rate-limit.ts already documents.
-interface Subscriber { clubId: string; send: (event: string, data: unknown) => void }
+### The removal problem
 
-export function subscribe(sub: Subscriber): () => void
-export function broadcastPostCreated(post: PostRecord): void
-export function broadcastPostRemoved(
-  post: { id: string; clubId: string; scope: PostScope },
-  reason: "hidden" | "deleted",
-): void
+Pull every post with `updatedAt > cursor` and you get creations and edits. You do
+**not** get removals: a hidden or deleted post simply stops matching the filter,
+so the mirror never hears about it and keeps serving it to members indefinitely.
+Auto-hide at three reports would be visible on ServerNZ and inert everywhere else.
 
-// Both broadcasts apply the SAME visibility predicate as GET /api/v1/feed:
-//   scope === "ALL_CLUBS" || post.clubId === subscriber.clubId
-// Skipping it on post_removed would leak the existence and ids of other
-// clubs' private posts to every connected club.
-```
+The same gap makes retention fiction. ServerNZ prunes at 12 months; if mirrors
+never learn, every connected club keeps its copies forever and the policy is true
+only on the server.
 
-```ts
-export const runtime = "nodejs"       // not edge — needs the Prisma client
-export const dynamic = "force-dynamic" // never statically optimised or cached
+**Solved without a tombstone table.** The obvious fix is a `post_tombstones`
+table. It is not needed, because three of the four removal paths already leave a
+row behind:
 
-// Response headers:
-//   Content-Type: text/event-stream
-//   Cache-Control: no-cache, no-transform
-//   Connection: keep-alive
-//   X-Accel-Buffering: no
+- **Hidden** — row persists with `hiddenAt` set.
+- **Soft deleted** — row persists with `deletedAt` set.
+- **Hard deleted** — this is the one that used to vanish. Redefined so that
+  content is blanked and every image file is unlinked *immediately*, while a stub
+  row survives carrying only id, club, scope and timestamps. The material is gone
+  at once, which is what hard delete is for; the stub is purely a signal, and the
+  retention job removes it after `tombstone_horizon_days`.
+- **Retention-pruned** — no signal needed. Mirrors apply the same retention window
+  locally, driven by the `retentionDays` the sync response advertises.
 
-// Heartbeat every 30s as an SSE comment frame (":ping\n\n"). On
-// request.signal 'abort': clear the interval AND unsubscribe — a leaked
-// subscriber holds a closed controller and throws on the next broadcast.
-// Cap concurrent streams per token (suggest 5).
-```
+One column (`purgedAt`) instead of a table, a model, a scope-filtered index and
+its own pruning pass.
 
-The one Caddyfile change this feature still needs:
+```jsonc
+{
+  "changes": [
+    // A live post: full payload, same serialiser as GET /api/v1/feed.
+    { "state": "visible", "post": { "id": "clx…", "club": {…}, "content": "…", … } },
 
-```caddyfile
-reverse_proxy app:3000 {
-	header_up X-Real-IP {remote_host}
-	header_up X-Forwarded-For {remote_host}
-	header_up X-Forwarded-Proto {scheme}
-	flush_interval -1
+    // Removed. NO content, NO author, NO images — the mirror only needs to know
+    // which row to drop. Sending the body of a post that was hidden for being
+    // abusive would defeat the point of hiding it.
+    { "state": "removed", "id": "clx…", "reason": "hidden" },
+    { "state": "removed", "id": "clx…", "reason": "deleted" }
+  ],
+  "cursor": "2026-08-22T04:11:08.221Z",   // max updatedAt in this page
+  "hasMore": true,                        // page again immediately when true
+
+  // Policy the server expects mirrors to apply locally.
+  "retentionDays": 365,
+  // Oldest cursor still serviceable. A client whose stored cursor predates
+  // this has missed removals it can never catch up on — it MUST discard its
+  // mirror and resync from scratch rather than carry stale rows forever.
+  "tombstoneHorizon": "2026-05-24T00:00:00.000Z"
 }
 ```
 
-**There is no replay buffer.** SSE delivers only what happens while the socket is
-open. A client that reconnects after a dropout **must** call `GET /api/v1/feed`
-with its last known cursor to backfill. Without that step, every network blip
-silently produces a hole in the feed.
+Scope filtering is identical to the browse feed and applies to removals too:
+`scope === "ALL_CLUBS" || clubId === requesting club`. A `CLUB_ONLY` post's
+removal must not be announced to clubs that were never shown the post — otherwise
+the sync channel leaks the ids and existence of every club's private posts.
 
-| Event | Payload | Sent when |
-| --- | --- | --- |
-| `post_created` | Full serialised post | A visible post is created |
-| `post_removed` | `{ id, reason }` | Auto-hidden at 3 reports, admin-hidden, or admin-deleted |
-| `:ping` | comment frame | Every 30s |
+### Two cursor traps
+
+**Commit order, not timestamp order.** An `updatedAt` cursor assumes rows become
+visible in timestamp order. They do not: a transaction that stamps
+`updatedAt = T1` may commit *after* one stamped `T2 > T1`. A client that advanced
+its cursor to `T2` will never see the `T1` row — permanently. The cheap, standard
+fix, and the one to specify: the client re-requests with a small overlap
+(`cursor − 60s`) on every pass, and its upsert is idempotent so re-seeing a row
+costs nothing. `servernz-other-lodges-sync.ts` has the same exposure today; the
+overlap is a one-line improvement there too.
+
+**Reports bump `updatedAt`.** Recording a report writes `reportCount`, which bumps
+`updatedAt` and re-sends the post to every mirror even though nothing
+client-visible changed. Accepted rather than engineered around: it is one row, the
+write is idempotent, and reports are rare. Splitting moderation counters onto a
+side table to avoid the churn costs more than the churn does.
+
+### Ordering and paging
+
+```ts
+// No deletedAt/hiddenAt filter — removals are the point of this endpoint.
+// Post state maps to the response `state` in the serialiser, not in the query.
+where: {
+  updatedAt: { gt: since },
+  OR: [
+    { scope: "ALL_CLUBS" },
+    { scope: "CLUB_ONLY", clubId: club.id },
+  ],
+},
+orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+take: limit + 1,   // the extra row is how hasMore is computed
+```
+
+**A page boundary must not split a timestamp.** If `limit` rows all share one
+`updatedAt` and the next row shares it too, returning `cursor =` that timestamp
+makes the next request skip the remainder (`gt`), while returning it and
+re-requesting `gt` the previous value loops forever. Either page on the composite
+`(updatedAt, id)` and return both parts, or extend the page to swallow every row
+sharing the final timestamp. The composite is the honest one and matches what
+`/api/v1/feed` already does for `before`/`beforeId`.
+
+### Why not SSE
+
+Rev B specified an SSE stream, an in-process subscriber registry, a fetch-based
+reader to work around `EventSource` being unable to send an `Authorization`
+header, and a `flush_interval -1` Caddy change. None of it survives contact with a
+mirroring client:
+
+- The browser never talks to ServerNZ, so there was never an `EventSource` — it is
+  a server-to-server call with a Bearer header, which was always fine.
+- A connection held open from every club install, indefinitely, is strictly worse
+  than a cursor poll on the cron the client already runs.
+- SSE has no replay buffer, so a mirror would still need this endpoint for
+  backfill after any dropout. Two mechanisms where one does the job.
+
+Removing it deletes an endpoint, `post-events.ts`, the ticket route, and the last
+Caddyfile change this feature required. In-page freshness becomes the client's own
+concern against its local database.
 
 ---
 
@@ -672,7 +775,7 @@ indefinitely. Each row should distinguish `hiddenBy: SYSTEM` from
 | Edit text | `PATCH /api/admin/posts/[id]` | Replaces `content`; original captured in the audit metadata |
 | Delete one image | `DELETE /api/admin/posts/[id]/images/[imageId]` | Row deleted, then `deleteStoredImage()` |
 | Soft delete | `PATCH /api/admin/posts/[id]` | Sets `deletedAt`. Gone from every feed, recoverable, files retained |
-| Hard delete | `DELETE /api/admin/posts/[id]` | Cascades reports and image rows, unlinks files, broadcasts `post_removed`. Not recoverable — confirm in the UI |
+| Hard delete | `DELETE /api/admin/posts/[id]` | Blanks `content`, deletes image rows, unlinks files, sets `purgedAt`. Reports cascade. A stub row survives as the mirror tombstone until the horizon passes (§7). Not recoverable — confirm in the UI |
 | Read/write settings | `GET\|PUT /api/admin/settings` | Retention days, auto-hide threshold, minimum clubs |
 | Run cleanup now | `POST /api/admin/settings/cleanup` | Invokes the same function the cron calls; returns the stats block |
 
@@ -720,18 +823,60 @@ export async function register() {
 }
 ```
 
+### Correction — rev B's advisory lock was wrong
+
+Rev B specified `pg_try_advisory_lock` / `pg_advisory_unlock` through
+`prisma.$queryRaw`. The booking client's `src/lib/servernz-sync-claim.ts`
+documents why that fails under Prisma, having hit it already:
+
+- A **session-scoped** advisory lock is taken and released through Prisma's
+  connection *pool*, so the unlock can execute on a different connection than the
+  lock. The lock then never releases and the job is wedged until the pool
+  recycles — silently.
+- An **xact-scoped** `pg_advisory_xact_lock` releases at commit, so covering the
+  pass means holding a transaction open across file I/O. Long transaction, worse
+  problem.
+
+Use their status-guarded claim instead: a conditional `updateMany` whose `count`
+*is* the claim. It is atomic, releases in a `finally`, and a process killed
+mid-pass is reaped by staleness rather than wedging anything.
+
 ```ts
 // src/lib/post-cleanup.ts — single-execution guard
-// A Postgres advisory lock makes the job safe if the app is ever run with
-// more than one instance, and costs nothing today. It also prevents the
-// "Run cleanup now" button from racing the 02:00 cron.
-const [{ locked }] = await prisma.$queryRaw<{ locked: boolean }[]>`
-  SELECT pg_try_advisory_lock(4823001) AS locked`
-if (!locked) return { skipped: "already-running" }
-try { /* … */ } finally {
-  await prisma.$queryRaw`SELECT pg_advisory_unlock(4823001)`
+// Generous relative to a real pass: reaping early is merely wasteful (two
+// overlapping passes), whereas reaping late leaves a wedged job, which is silent.
+const STALE_CLAIM_AFTER_MS = 30 * 60 * 1000
+
+const claim = await prisma.jobClaim.updateMany({
+  where: {
+    name: "posts.cleanup",
+    OR: [
+      { startedAt: null },
+      { startedAt: { lt: new Date(now.getTime() - STALE_CLAIM_AFTER_MS) } },
+    ],
+  },
+  data: { startedAt: now },
+})
+
+// count === 1 means THIS caller moved the row from "free or stale" to "held",
+// atomically. Any concurrent caller matched zero rows and does nothing —
+// which is what stops "Run cleanup now" racing the 02:00 cron.
+if (claim.count === 0) return { skipped: "already-running" }
+
+try {
+  /* … the pass … */
+} finally {
+  // Release regardless of outcome: a failed pass must not wedge the next one.
+  await prisma.jobClaim.update({
+    where: { name: "posts.cleanup" },
+    data: { startedAt: null },
+  })
 }
 ```
+
+Seed the `posts.cleanup` row in `prisma/seed.ts` — the guarded `updateMany`
+matches nothing if the row does not exist, so a missing row reads as "permanently
+held" and the job would never run.
 
 ### Deletion order
 
@@ -744,10 +889,23 @@ try { /* … */ } finally {
 4. Delete the post rows in a transaction — `post_images` and `post_reports`
    cascade.
 5. Unlink the files, tolerating `ENOENT`.
-6. Sweep `UPLOADS_DIR` for files older than 24 hours with no matching `PostImage`
+6. **Prune purged stubs.** Delete rows where
+   `purgedAt < now − tombstone_horizon_days`. These carry no content or files
+   already — they exist only to tell mirrors to drop their copy, and every mirror
+   that is going to hear the message has heard it by now.
+7. Sweep `UPLOADS_DIR` for files older than 24 hours with no matching `PostImage`
    row. This also collects derivatives written by uploads whose transaction later
    rolled back.
-7. `recordAudit({ action: "posts.cleanup", metadata: stats })`.
+8. `recordAudit({ action: "posts.cleanup", metadata: stats })`.
+
+**Retention is a shared policy, not a local one.** Step 2 deletes rows outright,
+leaving no signal — deliberately. Mirrors are not told about retention pruning;
+they apply the same window themselves, using the `retentionDays` value
+`/api/v1/feed/sync` advertises. The consequence to hold on to: **retention only
+actually deletes member content if the clients honour it.** A club running a
+modified or stale client keeps its copies. Worth stating plainly wherever the
+retention setting is described to an operator, because the setting reads like a
+guarantee and is really an instruction.
 
 **Why rows before files.** The brief deletes files first. If the process dies
 between the two steps, that leaves rows pointing at files that no longer exist —
@@ -757,7 +915,7 @@ but are invisible to users and are reclaimed by step 6. Prefer the failure mode
 nobody has to look at.
 
 Return and log
-`{ postsDeleted, imagesDeleted, filesUnlinked, reportsDeleted, skippedUnderReview, orphansCollected, durationMs }`
+`{ postsDeleted, imagesDeleted, filesUnlinked, reportsDeleted, skippedUnderReview, stubsPruned, orphansCollected, durationMs }`
 — this is what the `/settings` page shows after a manual run.
 
 ---
@@ -784,46 +942,194 @@ volumes:
 | --- | --- |
 | `Dockerfile` | `mkdir -p /app/data/uploads && chown nextjs:nodejs` before `USER nextjs` — the volume must be writable by the unprivileged user |
 | `docker-compose.dev.yml` | Same volume and env var so dev matches production |
-| `Caddyfile` | `flush_interval -1` on the reverse proxy, for SSE. **Body limit stays at 10 MB** |
+| `Caddyfile` | **No change.** Rev B needed `flush_interval -1` for SSE; with SSE removed the file is untouched and the 10 MB body cap stands |
 | `next.config.ts` | Add `"sharp"` to `serverExternalPackages` |
 | `package.json` | Add `sharp` and `node-cron` to `dependencies`; `@types/node-cron` to dev |
 | `src/proxy.ts` | `/posts` and `/settings` in *both* `PROTECTED_PREFIXES` and `config.matcher` |
 | `src/lib/admin-guard.ts` | Add `requireAdmin()` |
+| `prisma/seed.ts` | Seed the four `SystemSetting` rows and the `posts.cleanup` `JobClaim` row — the guarded claim never fires if its row is absent |
 | `.gitignore` | `/data` |
 | `.env.example` | `UPLOADS_DIR`, documented like the existing entries |
-| `README.md` | Note the new volume, and that uploads are on local disk — a second app replica would break SSE, the rate limiter, and image serving alike |
+| `README.md` | Note the new volume, and that uploads are on local disk — a second app replica would break the rate limiter and image serving alike |
 
 ---
 
-## 11. Client integration — contract only
+## 11. Client integration — AlpineClubBookingsNZ
 
-The member-facing UI belongs to the AlpineClubBookingsNZ booking client, a
-separate repository. It cannot be built as part of this work. What that
-implementer needs:
+The member-facing half lives in the booking client, a separate repository. It is
+not built as part of this work, but it is no longer a blank contract: that repo
+already has a mature ServerNZ integration, and this feature should extend it
+rather than invent a second way of talking to the same server.
 
-- **Credentials.** The install's existing API token (already held in that repo's
-  encrypted credential store and reached via `getOperationalServerNzApiKey()`),
-  plus the local session's member id, display name and email, sent as post fields.
-- **Initial load.** `GET /api/v1/feed?limit=20`, then follow `cursor` for older
-  pages.
-- **Live.** Fetch-based SSE reader, or scheduled polling. **On every reconnect,
-  backfill from the last cursor** — the stream has no replay.
-- **Composer size budget.** Up to 4 images, but **9 MB combined**. Show a running
-  total and block the send client-side; a server-side rejection arrives from Caddy
-  as a bare 413 with no JSON body.
-- **Own posts.** Hide the flag icon when `post.authorUserId` equals the session
-  member id. It is non-null only for same-club posts.
-- **No self-delete.** There is no member delete endpoint. If the design implies
-  members can retract a post, that expectation needs removing — and the UI should
-  say who to contact instead.
-- **Report modal.** Radio: Spam / Inappropriate content / Harassment / Other;
-  optional note, 1000 chars.
-- **After reporting.** The server returns `{ status, hidden }`. Show a "Reported"
-  state and collapse the card. This is local-only — the post returns on next
-  launch unless it was auto-hidden.
-- **Removal events.** On `post_removed`, fade out the matching card if it is on
-  screen. Ignore ids not currently rendered.
-- **Images.** Plain `<img src>` against the returned URLs; no auth header needed.
+```
+member browser ──▶ BookingsNZ app ──▶ local Postgres      (the feed renders from here)
+                         │
+                         ├── cron pull  ──▶ ServerNZ  GET  /api/v1/feed/sync?since=
+                         ├── live POST  ──▶ ServerNZ  POST /api/v1/posts
+                         └── live POST  ──▶ ServerNZ  POST /api/v1/posts/:id/report
+```
+
+**Reads mirror, writes proxy.** The feed renders from the club's own database, so
+it survives ServerNZ being slow or down. Writes go straight through, because a
+post or a report is meaningless if it only lands locally.
+
+Why not the two simpler options: **browser straight to ServerNZ** is not
+available — the API key is a *club* credential held in that repo's encrypted store
+and reached through `getOperationalServerNzApiKey()`; putting it in a browser
+exposes every club's key to every member, and CORS sits on top. **A pure live
+proxy** keeps the key safe but makes the feed only as available as ServerNZ, with
+a 10s timeout on each render.
+
+### Files to change, in order
+
+**1 · `src/lib/servernz-api.ts`** — three functions alongside `uploadOtherLodges` /
+`pullOtherLodges`, reusing `resolveConnection()`, `authHeaders()`, `readError()`
+and the existing `REQUEST_TIMEOUT_MS` unchanged:
+
+```ts
+export async function pullCommsFeed(since?: string | null): Promise<CommsPullResult>
+export async function createCommsPost(input: CommsPostInput): Promise<CommsPostResult>
+export async function reportCommsPost(
+  postId: string, input: CommsReportInput,
+): Promise<{ status: "recorded" | "duplicate"; hidden: boolean }>
+
+// createCommsPost sends multipart/form-data, so it CANNOT use authHeaders() —
+// that sets Content-Type: application/json, which would break the boundary.
+// Pass a FormData body and let fetch set the header, keeping only Authorization.
+```
+
+*Hold the remote to the same bounds as a local admin.* `distributedLodgeSchema` in
+that file caps every field to exactly the bounds the club's own officer is held
+to, and the comment explains why: trusting the remote *more* than the local admin
+is the inversion. Apply the same reasoning — the server caps `content` at 4000 and
+`authorName` at 200, so the client's pull schema does too, and rows that break the
+bounds are dropped rather than aborting the batch.
+
+One thing to add that the lodges code does not need: **log the dropped count**.
+With a forward cursor, a dropped row is not retried — the cursor moves past it and
+it is gone. Silent dropping would turn a server-side bug into permanently missing
+posts that nobody notices.
+
+**2 · Local mirror tables.** Two models in the client's own schema, storing the
+serialised shape as received — no `authorEmail`, because the server never sends it:
+
+```prisma
+model CommsPost {
+  // The ServerNZ post id, not a local cuid — it is the sync key.
+  id           String   @id
+  clubName     String
+  clubCode     String
+  authorName   String
+  // Non-null only for this club's own posts; drives "hide the flag on mine".
+  authorUserId String?
+  content      String
+  postedAt     DateTime
+  // Server's updatedAt for this row. Not used as the cursor — the cursor is
+  // stored once on ServerNzSettings — but useful for debugging drift.
+  syncedAt     DateTime
+  images       CommsPostImage[]
+}
+```
+
+A `removed` change deletes the local row outright. There is nothing to keep: the
+server sent no content with it, and the member must not see it again.
+
+**3 · `ServerNzSettings.commsCursor`.** `otherLodgesCursor` is `VarChar(64)`, and
+`servernz-api.ts` carries a comment about exactly why that matters: an over-long
+cursor raises P2000 *after* the rows are written and *before* the cursor advances,
+so every subsequent run re-fetches and re-fails, permanently. Give `commsCursor`
+the same treatment — `VarChar(64)` on the column and `.max(64)` in the response
+envelope schema, so an oversized value is rejected at parse time rather than at
+write time.
+
+**4 · `src/lib/servernz-comms-sync.ts`**, modelled on
+`servernz-other-lodges-sync.ts`. One pass:
+
+1. Read `commsCursor`. Subtract **60 seconds** before sending it — see the
+   commit-order trap in §7. Upserts are idempotent, so the overlap costs nothing.
+2. Call `pullCommsFeed(cursor)`.
+3. If the stored cursor is older than the response's `tombstoneHorizon`, **discard
+   the entire local mirror and resync from scratch** with no `since`. The club has
+   been offline long enough to have missed removals it can never catch up on;
+   carrying the old rows forward would leave deleted posts on screen indefinitely.
+4. Apply changes: `visible` upserts, `removed` deletes.
+5. Apply `retentionDays` locally — delete mirrored posts older than the window.
+6. Advance `commsCursor`. Loop while `hasMore`.
+
+Steps 4 and 6 belong in one transaction per page, so a crash mid-page cannot
+advance the cursor past changes that were not applied.
+
+**5 · The claim and the cron.** Add a second claim beside
+`withOtherLodgesSyncClaim` — the same status-guarded `updateMany`, a separate
+column so a comms pass and a lodges pass never block each other. Then call it from
+`src/app/api/cron/alpine-server-sync/route.ts`, which already exists and already
+runs on the right schedule.
+
+A daily pass is too slow for a conversation. Something in the 5–15 minute range
+fits a feed people talk on, and is the one number worth deciding deliberately
+rather than inheriting from the lodges sync.
+
+**6 · Write proxies.**
+
+```ts
+// src/app/api/comms/posts/route.ts
+const session = await auth()
+if (!session?.user) return unauthorized()
+
+// Author identity comes from the SESSION, never from the request body.
+// ServerNZ cannot verify these fields (decision 04) — it trusts this club's
+// key. That trust is only warranted if the values are taken from a real
+// authenticated session here. Accepting them from the client would make any
+// member able to post under any name, network-wide.
+await createCommsPost({
+  authorUserId: session.user.id,
+  authorName:   session.user.name,
+  authorEmail:  session.user.email,
+  content, scope, images,
+})
+```
+
+The report route is the same shape: `reporter_user_id` from `session.user.id`,
+never from the body. Return the server's `{ status, hidden }` to the browser so
+the UI can show a "Reported" state.
+
+**7 · Images — do not hotlink the capability URLs.** Pointing `<img src>` straight
+at ServerNZ sends every member's IP address to the central server, spreads the
+unguessable URLs into browser history and referrer headers across every club, and
+breaks all images whenever ServerNZ is down. Proxy them through the client's
+existing `/api/images` namespace, keyed by the mirrored post id and image index so
+the ServerNZ URL never reaches the browser. Text still renders when the central
+server is unreachable; only the images go missing, which is the right way round.
+
+Caching the bytes locally is the fully-offline alternative. It costs one copy per
+club per image — reasonable at this scale, but a real multiplier, so make it a
+decision rather than a default.
+
+**8 · Where it appears.** A route of its own under `(authenticated)`, with a nav
+entry beside Recent News — not merged into it. `(authenticated)/notices` is
+club-internal, admin-authored and read-tracked; this is member-authored and
+cross-club. Folding one into the other would put unmoderated content from other
+clubs into a club's own official notices stream.
+
+Gate it on a new `modules.commsPortal` flag through the existing
+`loadEffectiveModuleFlags()`, exactly as the notices page gates on
+`modules.memberNotices`. A cross-club social feed is not something every club will
+want, and that opt-out already exists.
+
+The pieces are all in that repo already: Radix dialog for the report modal,
+`sonner` for confirmation toasts, `photoswipe` for the image lightbox, `date-fns`
+and `formatNZDate` for timestamps. Nothing new is needed.
+
+### Two things the UI must say out loud
+
+- **The size budget.** Up to 4 images but **9 MB combined**. Show a running total
+  and block the send client-side — a server-side rejection arrives from Caddy as a
+  bare 413 with no JSON body, which cannot be turned into a useful message.
+- **Posts cannot be retracted.** There is no member delete endpoint (decision 05).
+  A member who posts by mistake needs a ServerNZ admin, and the post stays live in
+  every connected club's feed until they get one. Whatever contact route is
+  expected belongs in the composer's help text, not in an email nobody knows to
+  send.
 
 ---
 
@@ -841,12 +1147,12 @@ Sequential — each step compiles and is testable before the next begins.
 6. `GET /api/images/posts/[publicId]` — proves storage end to end before any
    writes exist.
 7. `POST /api/v1/posts` and `GET /api/v1/feed`.
-8. `src/lib/post-events.ts` + the SSE route; wire broadcasts into step 7.
+8. `GET /api/v1/feed/sync` — the mirroring cursor, removals included.
 9. `POST /api/v1/posts/[id]/report`.
 10. Admin API routes, then the `/posts` (three tabs) and `/settings` pages, then
     `proxy.ts` and `ConsoleShell`.
 11. `post-cleanup.ts` + `instrumentation.ts` + the manual trigger.
-12. Compose, Dockerfile, Caddyfile, env and README.
+12. Compose, Dockerfile, env and README. (No Caddyfile change in rev C.)
 
 **Where to cut if this ships in two parts.** Steps 1–9 deliver a working feed
 with reporting and auto-hide, but no console — which means **posts can be
@@ -865,12 +1171,12 @@ Vitest, co-located in `__tests__` beside the code, matching the existing layout.
 | `src/lib/__tests__/posts.test.ts` | Serialiser omits `authorEmail`; `authorUserId` null for other clubs; zod bounds |
 | `src/lib/__tests__/uploads.test.ts` | Magic-byte rejection of a renamed non-image; combined size over 9 MB rejected; traversal keys throw; `ENOENT` unlink is a no-op; EXIF absent from output |
 | `src/lib/__tests__/settings.test.ts` | Missing rows fall back to defaults; malformed values do not throw |
-| `src/lib/__tests__/post-events.test.ts` | `CLUB_ONLY` events reach only the owning club, on create *and* removal |
+| `…/api/v1/__tests__/feed-sync-route.test.ts` | Hidden and purged posts appear as `state: "removed"` carrying no content; `CLUB_ONLY` removals reach only the owning club; a page boundary splitting one `updatedAt` loses no row and does not loop; a cursor older than the horizon reports full-resync |
 | `…/api/v1/__tests__/feed-route.test.ts` | Scope filtering; hidden and deleted excluded; keyset paging across same-millisecond posts |
 | `…/api/v1/__tests__/post-report-route.test.ts` | **Two reports do not hide; the third does**; three from one club is enough; duplicate returns 200 without recounting; `autoHideExempt` post never hides; cross-club `CLUB_ONLY` report → 404 |
 | `…/api/v1/__tests__/posts-route.test.ts` | Scope enforcement; >4 images rejected; failed image processing leaves no orphaned files or rows |
 | `…/api/admin/__tests__/posts-admin-route.test.ts` | Non-ADMIN session rejected on every route; unhide dismisses reports and zeroes the count; `{ exempt: true }` survives a fresh round of reports; hard delete unlinks files |
-| `src/lib/__tests__/post-cleanup.test.ts` | Retention `0` is a no-op; posts under review skipped; orphan sweep collects; stats accurate |
+| `src/lib/__tests__/post-cleanup.test.ts` | Retention `0` is a no-op; posts under review skipped; purged stubs pruned only past the horizon; a stale claim is reaped; a held claim makes the run a no-op; orphan sweep collects; stats accurate |
 
 **The three worth writing first:** the 2-vs-3 threshold boundary, the
 duplicate-report case, and the `autoHideExempt` override. Together they pin down
@@ -878,6 +1184,9 @@ the entire auto-hide contract.
 
 ---
 
-*Rev B — decisions 01–07 settled and applied. Drafted against commit `c687b4f` on
-`main`; line references such as `Caddyfile:27`, `src/proxy.ts:16` and
-`Dockerfile:52` are accurate as at that commit.*
+*Rev C — decisions 01–07 settled and applied; mirroring, removal propagation and
+the corrected cleanup claim added after reading the booking client. Drafted
+against `AlpineClubServerNZ@c687b4f` on `main`; line references such as
+`Caddyfile:27`, `src/proxy.ts:16` and `Dockerfile:52` are accurate as at that
+commit. Client-side references are to `AlpineClubBookingsNZ` as it stands
+alongside it.*
