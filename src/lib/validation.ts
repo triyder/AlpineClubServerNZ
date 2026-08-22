@@ -39,12 +39,29 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
-/** Admin-issued token creation. */
+/**
+ * Admin-issued token creation.
+ *
+ * `posts:read` covers the feed and the mirroring cursor; `posts:write` covers
+ * sharing, reporting and a club withdrawing its own post. Two scopes rather
+ * than three, matching the existing lodges read/write pair — reporting is not a
+ * meaningfully different capability from posting for a club that has both.
+ *
+ * Tokens issued before the Communication Portal shipped do not carry these, so
+ * they must be re-issued or topped up before a club can use the feed.
+ */
 export const createTokenSchema = z.object({
   name: z.string().min(1).max(120),
   scopes: z
     .array(z.string().min(1).max(60))
     .max(50)
-    .default(["sync:read", "sync:write", "lodges:read", "lodges:write"]),
+    .default([
+      "sync:read",
+      "sync:write",
+      "lodges:read",
+      "lodges:write",
+      "posts:read",
+      "posts:write",
+    ]),
 });
 export type CreateTokenInput = z.infer<typeof createTokenSchema>;
