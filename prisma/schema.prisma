@@ -252,6 +252,15 @@ model Post {
 
   content String @db.VarChar(4000)
 
+  // The sanitised rich body, when the sending club had one. Null for a plain
+  // post and for anything whose HTML sanitised away to nothing — `content` is
+  // authoritative in both cases, which is why it is not optional.
+  //
+  // Sanitised BY THIS SERVER on receipt, never merely accepted: an API key
+  // proves which club is calling and nothing about what its members wrote, and
+  // this body is handed to every other club's browser.
+  bodyHtml String? @map("body_html") @db.VarChar(20000)
+
   // Cached count of NON-dismissed reports. Recomputed from the report rows on
   // every report and every dismissal, never blind-incremented, so it cannot
   // drift away from the rows it summarises.

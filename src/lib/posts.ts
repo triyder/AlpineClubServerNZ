@@ -21,6 +21,7 @@ export const postSelect = {
   authorName: true,
   authorEmail: true,
   content: true,
+  bodyHtml: true,
   reportCount: true,
   hiddenAt: true,
   hiddenBy: true,
@@ -61,6 +62,7 @@ export interface ClientPost {
   club: { id: string; name: string; code: string };
   authorName: string;
   content: string;
+  bodyHtml: string | null;
   images: ClientPostImage[];
   createdAt: string;
   updatedAt: string;
@@ -90,6 +92,9 @@ export function serializePostForClient(
     club: { id: post.club.id, name: post.club.name, code: post.club.code },
     authorName: post.authorName,
     content: post.content,
+    // Sent alongside the text, never instead of it: a mirror that cannot render
+    // HTML — or that sanitises this away entirely — still has the words.
+    bodyHtml: post.bodyHtml,
     images: post.images.map((img) => ({
       url: postImageUrl(baseUrl, img.publicId),
       width: img.width,
@@ -163,6 +168,9 @@ export function serializePostForAdmin(
 // Validation
 // ---------------------------------------------------------------------------
 
+/** Rich bodies carry markup, so the same words need more room than `content`. */
+export const POST_BODY_HTML_MAX = 20_000;
+
 export const POST_CONTENT_MAX = 4000;
 export const POST_AUTHOR_NAME_MAX = 200;
 export const REPORT_DETAILS_MAX = 1000;
@@ -203,6 +211,14 @@ export const sharePostSchema = z.object({
     )
     .optional(),
   content: z.string().min(1).max(POST_CONTENT_MAX),
+  // Optional rich body. Bounded here as a cheap first cut; the real control is
+  // `sanitizeSharedHtml`, which is what decides which of these bytes survive.
+  body_html: z
+    .preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+      z.string().max(POST_BODY_HTML_MAX).nullable().optional(),
+    )
+    .optional(),
 });
 export type SharePostInput = z.infer<typeof sharePostSchema>;
 
