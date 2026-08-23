@@ -8,6 +8,9 @@ export interface AuditEntry {
   outcome?: AuditOutcome;
   clubId?: string | null;
   tokenId?: string | null;
+  /** Console user who performed the action. Null for client-API activity,
+   *  which is attributed by club/token instead. */
+  userId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
   metadata?: Prisma.InputJsonValue;
@@ -26,6 +29,7 @@ export async function recordAudit(entry: AuditEntry): Promise<void> {
         outcome: entry.outcome ?? "SUCCESS",
         clubId: entry.clubId ?? null,
         tokenId: entry.tokenId ?? null,
+        userId: entry.userId ?? null,
         ipAddress: entry.ipAddress ?? null,
         userAgent: entry.userAgent ?? null,
         metadata: entry.metadata,

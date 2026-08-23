@@ -31,6 +31,19 @@ export function ConsoleShell({
               <Link href="/audit" className="hover:text-foreground">
                 Audit
               </Link>
+              {/* The Communication Portal screens are ADMIN-only, so they are
+                  hidden from anyone who would only be bounced by the page
+                  guard. The guard is still what enforces it. */}
+              {session.role === "ADMIN" && (
+                <>
+                  <Link href="/posts" className="hover:text-foreground">
+                    Posts
+                  </Link>
+                  <Link href="/settings" className="hover:text-foreground">
+                    Settings
+                  </Link>
+                </>
+              )}
               <Link href="/profile" className="hover:text-foreground">
                 Profile
               </Link>

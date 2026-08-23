@@ -59,6 +59,14 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe123!}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      # Communication Portal image storage. MUST be the volume mount below and
+      # MUST stay outside the image: the Dockerfile copies `public/` from the
+      # build stage, so anything written there is destroyed on every rebuild.
+      UPLOADS_DIR: /app/data/uploads
+    volumes:
+      # Post images survive `docker compose up --build`. Without this every
+      # shared photo in the network is lost on the next deploy.
+      - uploads_data:/app/data/uploads
     # On start: apply migrations, seed the default admin (idempotent), then
     # launch the standalone Next server. `migrate deploy` is safe to re-run.
     command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && node server.js"
@@ -90,6 +98,7 @@ services:
 
 volumes:
   db_data:
+  uploads_data:
   caddy_data:
   caddy_config:
 

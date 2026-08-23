@@ -30,7 +30,36 @@ Vitest · TypeScript**, on Node 24.
 | ------- | -------------------- | ------------------------------------------------------ |
 | `db`    | `postgres:16-alpine` | Persistent data (health-checked, named volume)         |
 | `app`   | built from Dockerfile | Next.js server; runs migrations + seed then serves     |
+| `uploads_data` | named volume  | Communication Portal images (see below)                |
 | `web`   | `caddy:2-alpine`     | Reverse proxy, automatic HTTPS, security headers        |
+
+### Communication Portal
+
+A cross-club message board. Posts written in a club's AlpineClubBookingsNZ
+install stay in that club unless a member ticks **share with all clubs** — only
+then are they uploaded here and distributed to every connected club. Club-only
+posts never reach this server at all, so their privacy does not depend on a
+filter here being correct.
+
+Clubs mirror the shared feed rather than reading it live: `GET /api/v1/feed/sync`
+is a forward cursor that reports removals as well as new posts, so a hidden,
+withdrawn or expired post actually disappears from every club. Admins moderate
+at **Posts** and tune retention at **Settings** (both ADMIN-only).
+
+Two operational notes:
+
+- **Images live on the `uploads_data` volume**, not in `public/` — the Dockerfile
+  copies `public/` from the build stage, so anything written there would be
+  destroyed on the next `docker compose up --build`. `UPLOADS_DIR` must point at
+  the mount.
+- **Uploads and rate limiting are per-container.** Image storage is local disk
+  and the rate limiter is in-process, so running a second `app` replica would
+  break both. Scaling out needs shared storage and a shared limiter first.
+
+Retention deletes content across the network only insofar as each club's install
+applies the removals it is sent; a club running a modified or long-stale install
+keeps its copies. The Posts screen is the place to check what has actually
+propagated.
 
 ---
 

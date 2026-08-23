@@ -31,11 +31,39 @@ enum AuditOutcome {
 }
 
 // ---------------------------------------------------------------------------
+// Communication Portal enums.
+//
+// There is deliberately NO PostScope enum. Club-only posts never leave the
+// AlpineClubBookingsNZ install that wrote them, so every post stored here is a
+// post a club chose to share with the whole network — there is nothing to
+// distinguish. Privacy comes from the data never being transmitted rather than
+// from a filter that a bug could invert.
+// ---------------------------------------------------------------------------
+
+enum PostHiddenBy {
+  SYSTEM // auto-hidden on reaching the report threshold
+  ADMIN // hidden by a central admin pending review
+}
+
+enum PostRemovedBy {
+  CLUB // the authoring club deleted or un-shared it
+  ADMIN // a central admin removed it
+  RETENTION // aged out of the retention window
+}
+
+enum ReportReason {
+  SPAM
+  INAPPROPRIATE
+  HARASSMENT
+  OTHER
+}
+
+// ---------------------------------------------------------------------------
 // Users — operators of the central server web UI.
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
+  id                String    @id @default(cuid())
   email             String    @unique
   passwordHash      String    @map("password_hash")
   role              Role      @default(USER)
@@ -45,6 +73,10 @@ model User {
 
   // Clubs this user has acted on (approvals/rejections). Optional linkage.
   reviewedClubs Club[] @relation("ClubReviewer")
+
+  // Audit entries this user caused. Lets the audit screen name the admin who
+  // hid, edited or removed a post rather than only recording that it happened.
+  auditLogs AuditLog[]
 
   @@map("users")
 }
@@ -69,12 +101,23 @@ model Club {
   reviewedBy   User?     @relation("ClubReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt   DateTime? @map("reviewed_at")
 
-  apiTokens ApiToken[]
-  auditLogs AuditLog[]
+  apiTokens            ApiToken[]
+  auditLogs            AuditLog[]
   // "Other lodges" this club uploaded to the central registry (provenance).
   submittedOtherLodges OtherLodge[] @relation("OtherLodgeSource")
   // "Other lodges" this club most recently pushed an update to.
-  updatedOtherLodges OtherLodge[] @relation("OtherLodgeLastUpdatedBy")
+  updatedOtherLodges   OtherLodge[] @relation("OtherLodgeLastUpdatedBy")
+
+  // Communication Portal: posts this club shared with the network, and reports
+  // its members filed against posts from anywhere.
+  posts       Post[]
+  postReports PostReport[] @relation("PostReportClub")
+
+  // When this club last pulled GET /api/v1/feed/sync. Stamped by that endpoint
+  // ONLY — deliberately distinct from ApiToken.lastUsedAt, which any
+  // authenticated call bumps. This is what answers "has this club actually
+  // received the post I removed?", which lastUsedAt would overstate.
+  lastCommsSyncAt DateTime? @map("last_comms_sync_at")
 
   @@index([status])
   @@map("clubs")
@@ -87,17 +130,17 @@ model Club {
 // ---------------------------------------------------------------------------
 
 model ApiToken {
-  id         String    @id @default(cuid())
-  clubId     String    @map("club_id")
-  club       Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  name       String
-  tokenHash  String    @unique @map("token_hash")
+  id          String    @id @default(cuid())
+  clubId      String    @map("club_id")
+  club        Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  name        String
+  tokenHash   String    @unique @map("token_hash")
   // Short non-secret prefix (e.g. "acs_ab12cd34") for display/lookup.
-  tokenPrefix String   @map("token_prefix")
-  scopes     String[]  @default([])
-  revokedAt  DateTime? @map("revoked_at")
-  lastUsedAt DateTime? @map("last_used_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  tokenPrefix String    @map("token_prefix")
+  scopes      String[]  @default([])
+  revokedAt   DateTime? @map("revoked_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   auditLogs AuditLog[]
 
@@ -119,6 +162,10 @@ model AuditLog {
   club      Club?        @relation(fields: [clubId], references: [id], onDelete: SetNull)
   tokenId   String?      @map("token_id")
   token     ApiToken?    @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  // The console user who performed the action, for admin-initiated entries.
+  // Null for client-API activity, which is attributed by club/token instead.
+  userId    String?      @map("user_id")
+  user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   ipAddress String?      @map("ip_address")
   userAgent String?      @map("user_agent")
   // Free-form structured context (request path, sync counts, error, ...).
@@ -128,6 +175,7 @@ model AuditLog {
   @@index([clubId])
   @@index([action])
   @@index([createdAt])
+  @@index([userId])
   @@map("audit_logs")
 }
 
@@ -144,13 +192,13 @@ model AuditLog {
 // ---------------------------------------------------------------------------
 
 model OtherLodge {
-  id                  String   @id @default(cuid())
-  name                String   @unique
-  location            String?  @db.VarChar(300)
-  bookingOfficerName  String?  @map("booking_officer_name") @db.VarChar(200)
-  bookingOfficerEmail String?  @map("booking_officer_email") @db.VarChar(320)
-  bookingOfficerPhone String?  @map("booking_officer_phone") @db.VarChar(50)
-  bedCapacity         Int?     @map("bed_capacity")
+  id                  String  @id @default(cuid())
+  name                String  @unique
+  location            String? @db.VarChar(300)
+  bookingOfficerName  String? @map("booking_officer_name") @db.VarChar(200)
+  bookingOfficerEmail String? @map("booking_officer_email") @db.VarChar(320)
+  bookingOfficerPhone String? @map("booking_officer_phone") @db.VarChar(50)
+  bedCapacity         Int?    @map("bed_capacity")
 
   // Distribution marker: true = include when distributing to connected clubs.
   distribute Boolean @default(false)
@@ -172,4 +220,165 @@ model OtherLodge {
   @@index([distribute])
   @@index([sourceClubId])
   @@map("other_lodges")
+}
+
+// ---------------------------------------------------------------------------
+// Communication Portal — the cross-club message board.
+//
+// A post reaches this server ONLY when a member ticked "share with all clubs"
+// in their AlpineClubBookingsNZ install. Club-local posts stay in that install
+// and are never uploaded, so everything below concerns network posts only.
+//
+// The authoring club keeps its own canonical copy; this row is the
+// distribution copy that every other club mirrors.
+// ---------------------------------------------------------------------------
+
+model Post {
+  id     String @id @default(cuid())
+  clubId String @map("club_id")
+  club   Club   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  // Author identity as asserted by the posting club's install. The server
+  // cannot verify it — it trusts the club's API key — so treat these as
+  // club-attested, not authenticated. See docs/comms-portal-spec.md.
+  //
+  // authorUserId and authorEmail are held for moderation only and are NEVER
+  // serialized to a client: the authoring club already has them, and no other
+  // club needs another club's member identifiers or addresses.
+  authorUserId String  @map("author_user_id")
+  authorEmail  String? @map("author_email") @db.VarChar(320)
+  // The one author field clients do receive — it is what readers see.
+  authorName   String  @map("author_name") @db.VarChar(200)
+
+  content String @db.VarChar(4000)
+
+  // Cached count of NON-dismissed reports. Recomputed from the report rows on
+  // every report and every dismissal, never blind-incremented, so it cannot
+  // drift away from the rows it summarises.
+  reportCount Int @default(0) @map("report_count")
+
+  // Hidden: reversible, content intact, awaiting a human decision.
+  hiddenAt DateTime?     @map("hidden_at")
+  hiddenBy PostHiddenBy? @map("hidden_by")
+
+  // Reviewed and cleared by an admin: the report threshold must never
+  // auto-hide this post again. Without it, unhiding a post that someone is
+  // targeting simply restarts the countdown and it re-hides indefinitely.
+  autoHideExempt Boolean @default(false) @map("auto_hide_exempt")
+
+  // Removed: content blanked and every image file unlinked AT ONCE, so the
+  // material is gone immediately. What survives is a stub row carrying only
+  // ids and timestamps, and that stub IS the tombstone that tells mirroring
+  // clubs to drop their copy. The retention job deletes it once
+  // posts.tombstone_horizon_days has passed.
+  //
+  // Delete, un-share and age-out all do exactly this and differ only in who
+  // caused it, which is what removedBy records.
+  removedAt DateTime?      @map("removed_at")
+  removedBy PostRemovedBy? @map("removed_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  images  PostImage[]
+  reports PostReport[]
+
+  // Browse feed pages backwards on (createdAt, id).
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  // The mirroring cursor pages forwards on (updatedAt, id).
+  @@index([updatedAt, id])
+  @@index([clubId])
+  @@index([reportCount])
+  // Drives the console's Hidden tab.
+  @@index([hiddenAt])
+  // Retention sweeps expired stubs by removedAt.
+  @@index([removedAt])
+  @@map("posts")
+}
+
+// One optimised WebP derivative of an uploaded image. The original upload is
+// never persisted: it is decoded, resized, re-encoded and discarded.
+model PostImage {
+  id     String @id @default(cuid())
+  postId String @map("post_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  // Unguessable 128-bit capability id used in the public image URL. Random,
+  // NOT derived from the row id, so holding one feed page does not let anyone
+  // enumerate the images of posts they were never sent.
+  publicId String @unique @map("public_id")
+
+  // Path RELATIVE to UPLOADS_DIR, e.g. "posts/2026/08/<cuid>.webp".
+  // Server-generated and re-resolved against the root before every read or
+  // unlink, so a traversal sequence can never escape the uploads directory.
+  storageKey String @map("storage_key")
+
+  width    Int
+  height   Int
+  bytes    Int
+  position Int @default(0) // display order within the post, 0-3
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([postId])
+  @@map("post_images")
+}
+
+// A member's report against a network post. The reporting club comes from the
+// API token; the member id within that club is club-asserted.
+model PostReport {
+  id     String @id @default(cuid())
+  postId String @map("post_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  reporterClubId String @map("reporter_club_id")
+  reporterClub   Club   @relation("PostReportClub", fields: [reporterClubId], references: [id], onDelete: Cascade)
+  reporterUserId String @map("reporter_user_id")
+
+  reason  ReportReason
+  details String?      @db.VarChar(1000)
+
+  // Set when an admin dismisses the report. Dismissed rows stay for the audit
+  // trail but stop counting toward reportCount and the auto-hide threshold,
+  // which is what lets a wrongly-hidden post become re-reportable by a fresh
+  // set of members instead of being permanently immune.
+  dismissedAt DateTime? @map("dismissed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  // Club-scoped on purpose: member ids are unique within a club but collide
+  // across clubs, so keying on (post, member) alone would let one club's
+  // member block another's from ever reporting the same post.
+  @@unique([postId, reporterClubId, reporterUserId])
+  @@index([postId])
+  @@index([reporterClubId])
+  @@map("post_reports")
+}
+
+// ---------------------------------------------------------------------------
+// Operator-tunable settings and scheduled-job coordination.
+// ---------------------------------------------------------------------------
+
+// Small key/value store. Values are strings; src/lib/settings.ts parses and
+// defaults them through zod so a missing or malformed row is never fatal.
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+// Single-flight claim for scheduled jobs, so the nightly cron and the admin's
+// "Run cleanup now" button cannot run the same pass concurrently.
+//
+// Deliberately NOT a Postgres advisory lock: a session-scoped lock is taken
+// and released through Prisma's connection POOL, so the unlock can execute on
+// a different connection than the lock and the job wedges until the pool
+// recycles. An xact-scoped lock would mean holding a transaction open across
+// filesystem I/O. A status-guarded conditional update has neither problem.
+model JobClaim {
+  name      String    @id
+  startedAt DateTime? @map("started_at")
+
+  @@map("job_claims")
 }

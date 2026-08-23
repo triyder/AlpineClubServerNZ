@@ -17,6 +17,8 @@ const PROTECTED_PREFIXES = [
   "/lodges",
   "/audit",
   "/profile",
+  "/posts",
+  "/settings",
 ];
 
 export async function proxy(req: NextRequest) {
@@ -39,11 +41,15 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
+  // Must stay in step with PROTECTED_PREFIXES above: a path in one list but
+  // not the other is silently ungated, because the proxy never runs for it.
   matcher: [
     "/dashboard/:path*",
     "/clubs/:path*",
     "/lodges/:path*",
     "/audit/:path*",
     "/profile/:path*",
+    "/posts/:path*",
+    "/settings/:path*",
   ],
 };

@@ -30,7 +30,8 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "seed:demo": "tsx prisma/demo-seed.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.9.1",
@@ -43,11 +44,13 @@
     "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "next-themes": "^0.4.6",
+    "node-cron": "^4.6.0",
     "openssl": "^2.0.0",
     "pino": "^10.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
+    "sharp": "^0.35.3",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
