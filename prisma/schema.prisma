@@ -113,6 +113,22 @@ model Club {
   posts       Post[]
   postReports PostReport[] @relation("PostReportClub")
 
+  // Where this club wants shared posts pushed to, and which generation of its
+  // signing secret is current.
+  //
+  // The SECRET ITSELF IS NOT STORED. It is derived on demand from the server's
+  // signing key and this pair — see push-delivery.ts — so a database dump does
+  // not hand over the ability to forge pushes to every club on the network.
+  // Bumping the version rotates one club's secret without touching any other.
+  pushUrl           String? @map("push_url") @db.VarChar(2000)
+  pushSecretVersion Int     @default(1) @map("push_secret_version")
+  // Set when a club registers a target and cleared when it withdraws one, so
+  // "registered but paused" is expressible rather than being conflated with
+  // "never registered".
+  pushEnabled       Boolean @default(true) @map("push_enabled")
+
+  deliveries PostDelivery[]
+
   // When this club last pulled GET /api/v1/feed/sync. Stamped by that endpoint
   // ONLY — deliberately distinct from ApiToken.lastUsedAt, which any
   // authenticated call bumps. This is what answers "has this club actually
@@ -289,8 +305,9 @@ model Post {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  images  PostImage[]
-  reports PostReport[]
+  images         PostImage[]
+  reports        PostReport[]
+  postDeliveries PostDelivery[]
 
   // Browse feed pages backwards on (createdAt, id).
   @@index([createdAt(sort: Desc), id(sort: Desc)])
@@ -335,6 +352,61 @@ model PostImage {
 
 // A member's report against a network post. The reporting club comes from the
 // API token; the member id within that club is club-asserted.
+/**
+ * One post's delivery to one club.
+ * A row per (post, club) rather than a single "delivered" flag on the post,
+ * because the interesting state is per-recipient: one club being unreachable
+ * must not hold up the other nine, and "which clubs have this" is a question
+ * an admin will ask the moment a post is reported.
+ * POLLING REMAINS THE BACKSTOP. Every club also pulls /feed/sync on its own
+ * schedule, so a delivery that exhausts its attempts is a delay rather than a
+ * loss — which is why this table may give up without anyone losing a post.
+ */
+model PostDelivery {
+  id     String @id @default(cuid())
+  postId String @map("post_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  clubId String @map("club_id")
+  club   Club   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  /// "created" or "removed" — a withdrawal has to reach the mirrors too, and it
+  /// travels the same queue so ordering between the two is preserved per club.
+  kind PostDeliveryKind @default(CREATED)
+
+  status        PostDeliveryStatus @default(PENDING)
+  attempts      Int                @default(0)
+  /// Next time this row is eligible. Backoff moves it forward; a fresh row is
+  /// eligible immediately.
+  nextAttemptAt DateTime           @default(now()) @map("next_attempt_at")
+  deliveredAt   DateTime?          @map("delivered_at")
+  /// The last failure, bounded — it can carry a remote's own error text.
+  lastError     String?            @map("last_error") @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// One delivery per post per club per kind. This is what makes enqueueing
+  /// idempotent: a re-share or a repeated withdrawal cannot queue a second
+  /// copy, and the worker cannot double-send.
+  @@unique([postId, clubId, kind])
+  /// The worker's only query: eligible work, oldest first.
+  @@index([status, nextAttemptAt])
+  @@map("post_deliveries")
+}
+
+enum PostDeliveryKind {
+  CREATED
+  REMOVED
+}
+
+enum PostDeliveryStatus {
+  PENDING
+  DELIVERED
+  /// Attempts exhausted, or refused in a way retrying cannot fix. Polling still
+  /// carries the post, so this is "not pushed", never "not delivered".
+  ABANDONED
+}
+
 model PostReport {
   id     String @id @default(cuid())
   postId String @map("post_id")

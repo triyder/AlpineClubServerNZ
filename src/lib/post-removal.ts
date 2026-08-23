@@ -1,6 +1,7 @@
 import "server-only";
 import type { PostRemovedBy } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { enqueuePostDeliveries } from "@/lib/push-delivery";
 import { deleteStoredImage } from "@/lib/uploads";
 import { logger } from "@/lib/logger";
 
@@ -86,6 +87,17 @@ export async function removePost(
     }),
     prisma.postImage.deleteMany({ where: { postId: post.id } }),
   ]);
+
+  // Tell the mirrors, so a removal reaches every club's board rather than only
+  // this server's. Queued rather than sent here: removal must complete on this
+  // side whether or not any club is reachable, and the sweep carries it.
+  //
+  // Also clears the post's content column above — so a mirror that is offline
+  // for a week and pulls afterwards finds a tombstone, not the words. Push and
+  // poll therefore agree even when the push never arrives.
+  void enqueuePostDeliveries(post.id, "REMOVED").catch(() => {
+    // Polling carries the tombstone regardless.
+  });
 
   let filesUnlinked = 0;
   for (const key of storageKeys) {

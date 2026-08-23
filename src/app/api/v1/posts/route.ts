@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { publicBaseUrl } from "@/lib/env";
 import { rewriteImageSources, sanitizeSharedHtml } from "@/lib/post-html";
+import { enqueuePostDeliveries } from "@/lib/push-delivery";
 import {
   normalizePostContent,
   POST_CONTENT_MAX,
@@ -198,6 +199,14 @@ export async function POST(req: Request) {
     await rollback();
     throw err;
   }
+
+  // Queue the push to every other club. Not awaited into the response: the
+  // post is already stored and visible through the feed, and a slow or
+  // unreachable club must not make the sharing club's own request hang.
+  void enqueuePostDeliveries(postId, "CREATED").catch(() => {
+    // Nothing to do here — polling carries the post regardless, which is the
+    // whole reason this queue is allowed to fail.
+  });
 
   await recordAudit({
     action: "post.share",
