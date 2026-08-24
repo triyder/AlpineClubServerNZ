@@ -70,6 +70,19 @@ const OPTIONS: sanitizeHtml.IOptions = {
     a: ["href", "target", "rel"],
     img: ["src", "alt", "width", "height"],
   },
+  // The client's colour classes, passed through so a mirror renders them
+  // with its own theme CSS. Closed set: any other class vanishes here.
+  allowedClasses: {
+    span: [
+      "post_message_black",
+      "post_message_red",
+      "post_message_orange",
+      "post_message_green",
+      "post_message_blue",
+      "post_message_purple",
+      "post_message_grey",
+    ],
+  },
   allowedStyles: {
     "*": {
       color: ALLOWED_COLOURS.map((hex) => new RegExp(`^${hex}$`, "i")),
