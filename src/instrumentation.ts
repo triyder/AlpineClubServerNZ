@@ -19,9 +19,15 @@ export async function register() {
     process.env.POSTS_CLEANUP_ENABLED === "true";
   if (!enabled) return;
 
-  const [{ default: cron }, { runPostCleanup }, { logger }] = await Promise.all([
+  const [
+    { default: cron },
+    { runPostCleanup },
+    { runPostDeliverySweep },
+    { logger },
+  ] = await Promise.all([
     import("node-cron"),
     import("@/lib/post-cleanup"),
+    import("@/lib/push-delivery"),
     import("@/lib/logger"),
   ]);
 
@@ -40,4 +46,37 @@ export async function register() {
   );
 
   logger.info("scheduled posts cleanup for 02:00 UTC daily");
+
+  // Push delivery. EVERY MINUTE, unlike the nightly cleanup beside it, because
+  // this is the latency path: a member ticks "share with all clubs" and expects
+  // it to appear on other boards now, not tomorrow. The sweep is bounded per
+  // pass and does nothing at all when the queue is empty, which is most minutes.
+  //
+  // Overlap is guarded by a plain in-process flag rather than a database claim.
+  // That is enough HERE and would not be in the client: this server runs a
+  // single instance, and the worst case if that ever stops being true is a
+  // delivery attempted twice, which the receiving club treats as idempotent.
+  let deliverySweepRunning = false;
+  cron.schedule(
+    "* * * * *",
+    () => {
+      if (deliverySweepRunning) return;
+      deliverySweepRunning = true;
+      void runPostDeliverySweep()
+        .then((result) => {
+          if (result.attempted > 0) {
+            logger.info({ ...result }, "post delivery sweep");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "post delivery sweep failed");
+        })
+        .finally(() => {
+          deliverySweepRunning = false;
+        });
+    },
+    { timezone: "UTC" },
+  );
+
+  logger.info("scheduled post delivery sweep every minute");
 }

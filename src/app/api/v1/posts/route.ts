@@ -4,6 +4,8 @@ import { authenticateApiRequest, clientIp, hasScope } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { publicBaseUrl } from "@/lib/env";
+import { rewriteImageSources, sanitizeSharedHtml } from "@/lib/post-html";
+import { enqueuePostDeliveries } from "@/lib/push-delivery";
 import {
   normalizePostContent,
   POST_CONTENT_MAX,
@@ -85,6 +87,7 @@ export async function POST(req: Request) {
     author_name: form.get("author_name"),
     author_email: form.get("author_email"),
     content: form.get("content"),
+    body_html: form.get("body_html"),
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -144,6 +147,29 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // THE HTML ARRIVES NAMING THE SENDING CLUB'S OWN IMAGE URLS, which mean
+  // nothing on this server or on any other club. `image_ids` lists the sender's
+  // local ids in the SAME ORDER as the files it attached, so each maps onto the
+  // copy just written here; anything unmapped stays as it was and is then
+  // dropped by the sanitiser, because a missing picture is better than one
+  // pointing at a host the reader cannot reach and which would learn they read
+  // it.
+  const localIds = String(form.get("image_ids") ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => /^[0-9a-f]{32}$/.test(id));
+  const mapping = new Map<string, string>();
+  localIds.forEach((localId, index) => {
+    const copy = stored[index];
+    if (copy) mapping.set(localId, copy.publicId);
+  });
+
+  const bodyHtml = sanitizeSharedHtml(
+    parsed.data.body_html
+      ? rewriteImageSources(parsed.data.body_html, mapping)
+      : null,
+  );
+
   let postId: string;
   try {
     const post = await prisma.post.create({
@@ -154,6 +180,7 @@ export async function POST(req: Request) {
         authorName: parsed.data.author_name,
         authorEmail: parsed.data.author_email ?? null,
         content,
+        bodyHtml,
         images: {
           create: stored.map((s, index) => ({
             publicId: s.publicId,
@@ -172,6 +199,14 @@ export async function POST(req: Request) {
     await rollback();
     throw err;
   }
+
+  // Queue the push to every other club. Not awaited into the response: the
+  // post is already stored and visible through the feed, and a slow or
+  // unreachable club must not make the sharing club's own request hang.
+  void enqueuePostDeliveries(postId, "CREATED").catch(() => {
+    // Nothing to do here — polling carries the post regardless, which is the
+    // whole reason this queue is allowed to fail.
+  });
 
   await recordAudit({
     action: "post.share",
