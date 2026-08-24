@@ -48,3 +48,5 @@ prisma/*.db
 /body.txt
 /*.html
 *.cookie
+
+certificates

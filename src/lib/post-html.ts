@@ -19,6 +19,10 @@ import sanitizeHtml from "sanitize-html";
  */
 
 const ALLOWED_COLOURS = [
+  // Black joined the client allowlist 24 Aug 2026; without it here a
+  // shared post's black text would be stripped on receipt and every
+  // mirror would render it in the default colour instead.
+  "#000000",
   "#b42318",
   "#b54708",
   "#067647",
