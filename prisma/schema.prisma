@@ -78,6 +78,9 @@ model User {
   // hid, edited or removed a post rather than only recording that it happened.
   auditLogs AuditLog[]
 
+  // Sync issues this user flagged as cleared.
+  clearedSyncIssues SyncIssue[] @relation("SyncIssueClearedBy")
+
   @@map("users")
 }
 
@@ -128,6 +131,16 @@ model Club {
   pushEnabled       Boolean @default(true) @map("push_enabled")
 
   deliveries PostDelivery[]
+
+  // The API version this club last reported (`major.minor`, see
+  // src/lib/api-version.ts) and when it last asked the version endpoint. Null
+  // means the club has never reported one — software older than the version
+  // check. Stamped by the version check and by any request that carries the
+  // version header.
+  lastReportedApiVersion String?   @map("last_reported_api_version") @db.VarChar(16)
+  lastVersionCheckAt     DateTime? @map("last_version_check_at")
+
+  syncIssues SyncIssue[]
 
   // When this club last pulled GET /api/v1/feed/sync. Stamped by that endpoint
   // ONLY — deliberately distinct from ApiToken.lastUsedAt, which any
@@ -462,4 +475,41 @@ model JobClaim {
   startedAt DateTime? @map("started_at")
 
   @@map("job_claims")
+}
+
+
+// ---------------------------------------------------------------------------
+// Sync issues — conditions an administrator must look at and flag as cleared.
+// Starts with VERSION_MISMATCH (a club reported an API version other than this
+// server's); `kind` is a plain string so later kinds need no migration.
+// ---------------------------------------------------------------------------
+
+model SyncIssue {
+  id            String          @id @default(cuid())
+  kind          String          @db.VarChar(40)
+  clubId        String          @map("club_id")
+  club          Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  clientVersion String?         @map("client_version") @db.VarChar(16)
+  serverVersion String          @map("server_version") @db.VarChar(16)
+  firstSeenAt   DateTime        @default(now()) @map("first_seen_at")
+  lastSeenAt    DateTime        @default(now()) @map("last_seen_at")
+  occurrences   Int             @default(1)
+  status        SyncIssueStatus @default(OPEN)
+  // `${clubId}:${kind}` while OPEN, null once CLEARED. Unique, so two requests
+  // racing cannot open two issues for one club and kind (Postgres treats the
+  // nulls of cleared rows as distinct, so any number of cleared rows coexist).
+  openKey       String?         @unique @map("open_key") @db.VarChar(80)
+  clearedById   String?         @map("cleared_by_id")
+  clearedBy     User?           @relation("SyncIssueClearedBy", fields: [clearedById], references: [id], onDelete: SetNull)
+  clearedAt     DateTime?       @map("cleared_at")
+  note          String?         @db.VarChar(500)
+
+  @@index([status])
+  @@index([clubId])
+  @@map("sync_issues")
+}
+
+enum SyncIssueStatus {
+  OPEN
+  CLEARED
 }
