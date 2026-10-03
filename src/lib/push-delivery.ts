@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { assertPublicDestination, PushTargetError } from "@/lib/push-targets";
+import { SERVER_API_VERSION, apiVersionsMatch } from "@/lib/api-version";
 
 /**
  * Pushing shared posts out to club installs (Communication Portal).
@@ -146,7 +147,12 @@ export interface DeliverySweepResult {
   delivered: number;
   failed: number;
   abandoned: number;
+  /** Held back because the club reports a different API version. */
+  held: number;
 }
+
+/** How long a held delivery waits before the version is looked at again. */
+const VERSION_HOLD_SECONDS = 3_600;
 
 /**
  * Deliver one queued row.
@@ -156,7 +162,7 @@ export interface DeliverySweepResult {
  * network today, and this is the last check before the connection.
  */
 async function deliverOne(deliveryId: string): Promise<
-  "delivered" | "failed" | "abandoned"
+  "delivered" | "failed" | "abandoned" | "held"
 > {
   const delivery = await prisma.postDelivery.findUnique({
     where: { id: deliveryId },
@@ -165,7 +171,12 @@ async function deliverOne(deliveryId: string): Promise<
       kind: true,
       attempts: true,
       club: {
-        select: { id: true, pushUrl: true, pushSecretVersion: true },
+        select: {
+          id: true,
+          pushUrl: true,
+          pushSecretVersion: true,
+          lastReportedApiVersion: true,
+        },
       },
       post: {
         select: { id: true, removedAt: true, hiddenAt: true },
@@ -173,6 +184,22 @@ async function deliverOne(deliveryId: string): Promise<
     },
   });
   if (!delivery || !delivery.club.pushUrl) return "abandoned";
+
+  // A club that has reported a DIFFERENT API version receives nothing until it
+  // matches. HELD, not failed: no attempt is consumed and nothing is abandoned,
+  // because the delay is the club's upgrade and not a delivery fault. A club that
+  // has never reported a version (software older than the check) is not held.
+  const reported = delivery.club.lastReportedApiVersion;
+  if (reported !== null && !apiVersionsMatch(reported, SERVER_API_VERSION)) {
+    await prisma.postDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        lastError: `Held: club reports API version ${reported}; server is ${SERVER_API_VERSION}.`,
+        nextAttemptAt: new Date(Date.now() + VERSION_HOLD_SECONDS * 1000),
+      },
+    });
+    return "held";
+  }
 
   const attempts = delivery.attempts + 1;
 
@@ -280,6 +307,7 @@ export async function runPostDeliverySweep(
     delivered: 0,
     failed: 0,
     abandoned: 0,
+    held: 0,
   };
 
   for (const row of due) {
@@ -287,6 +315,7 @@ export async function runPostDeliverySweep(
       const outcome = await deliverOne(row.id);
       if (outcome === "delivered") result.delivered += 1;
       else if (outcome === "abandoned") result.abandoned += 1;
+      else if (outcome === "held") result.held += 1;
       else result.failed += 1;
     } catch (error) {
       // One malformed row must not stop the sweep: the rest of the queue is

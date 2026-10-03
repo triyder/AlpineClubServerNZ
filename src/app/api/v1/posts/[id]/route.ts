@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { enforceClientApiVersion } from "@/lib/api-version-gate";
 import { authenticateApiRequest, clientIp, hasScope } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -28,6 +29,10 @@ export async function DELETE(
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+
+  // A club on a different API version transfers nothing (see api-version-gate).
+  const versionRefusal = await enforceClientApiVersion(req, auth.client);
+  if (versionRefusal) return versionRefusal;
   const { club, token } = auth.client;
 
   const rl = checkRateLimit(`posts:delete:${token.id}`);
