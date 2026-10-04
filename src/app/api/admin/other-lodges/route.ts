@@ -13,6 +13,7 @@ import {
   otherLodgeSelect,
   serializeOtherLodge,
 } from "@/lib/other-lodges";
+import { validateLodgePictures } from "@/lib/lodge-pictures";
 
 /** GET /api/admin/other-lodges — list the registry (admin/manager). */
 export async function GET() {
@@ -56,6 +57,11 @@ export async function POST(req: Request) {
     );
   }
 
+  const pictureError = await validateLodgePictures(parsed.data);
+  if (pictureError) {
+    return NextResponse.json({ error: pictureError }, { status: 400 });
+  }
+
   let created;
   try {
     created = await prisma.otherLodge.create({
@@ -67,6 +73,12 @@ export async function POST(req: Request) {
         bookingOfficerPhone: normalizeOtherLodgeText(parsed.data.bookingOfficerPhone),
         bedCapacity: parsed.data.bedCapacity ?? null,
         ...lodgeDetailColumns(parsed.data),
+        ...(parsed.data.imageId
+          ? { image: { connect: { id: parsed.data.imageId } } }
+          : {}),
+        ...(parsed.data.logoId
+          ? { logo: { connect: { id: parsed.data.logoId } } }
+          : {}),
         // Created in the same write as the lodge, so the lodge never exists
         // half-described.
         ...(parsed.data.amenities

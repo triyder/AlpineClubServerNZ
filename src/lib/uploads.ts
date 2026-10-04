@@ -32,6 +32,40 @@ export const MAX_HEIGHT = 1080;
 export const WEBP_QUALITY = 80;
 
 /**
+ * Where a processed image is stored and how large it may be. The storage
+ * folder is a closed set of server-defined names, never caller input, so a
+ * profile cannot be used to place a file anywhere else under the uploads root.
+ */
+export interface ImageProfile {
+  folder: "posts" | "library";
+  maxWidth: number;
+  maxHeight: number;
+}
+
+export const POST_IMAGE_PROFILE: ImageProfile = {
+  folder: "posts",
+  maxWidth: MAX_WIDTH,
+  maxHeight: MAX_HEIGHT,
+};
+
+/** Image library: a lodge picture, stored at the same size as a post image. */
+export const LIBRARY_IMAGE_PROFILE: ImageProfile = {
+  folder: "library",
+  maxWidth: MAX_WIDTH,
+  maxHeight: MAX_HEIGHT,
+};
+
+/** Image library: a logo, stored small. WebP keeps its transparency. */
+export const LIBRARY_LOGO_PROFILE: ImageProfile = {
+  folder: "library",
+  maxWidth: 600,
+  maxHeight: 600,
+};
+
+/** Most files one library upload request may carry. */
+export const LIBRARY_MAX_FILES = 10;
+
+/**
  * Ceiling on decoded pixels. A small file can decode to an enormous bitmap, so
  * the byte budget above is no protection on its own — this is what stops a
  * decompression bomb exhausting the container's memory.
@@ -114,13 +148,13 @@ export function sniffImageType(
 }
 
 /** Sharded by year/month so no single directory grows without bound. */
-function buildStorageKey(now: Date): string {
+function buildStorageKey(now: Date, folder: ImageProfile["folder"]): string {
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
   // Random rather than derived from the post id: the two are independent, so
   // learning one never reveals the other.
   const name = randomBytes(16).toString("hex");
-  return path.posix.join("posts", String(year), month, `${name}.webp`);
+  return path.posix.join(folder, String(year), month, `${name}.webp`);
 }
 
 /**
@@ -132,6 +166,7 @@ function buildStorageKey(now: Date): string {
 export async function writeProcessedImage(
   input: Buffer,
   now: Date = new Date(),
+  profile: ImageProfile = POST_IMAGE_PROFILE,
 ): Promise<StoredImage> {
   if (sniffImageType(input) === null) {
     throw new ImageRejectedError("File is not a JPEG, PNG or WebP image");
@@ -146,8 +181,8 @@ export async function writeProcessedImage(
     })
       .rotate() // honour the EXIF orientation flag before that metadata is dropped
       .resize({
-        width: MAX_WIDTH,
-        height: MAX_HEIGHT,
+        width: profile.maxWidth,
+        height: profile.maxHeight,
         fit: "inside",
         withoutEnlargement: true,
       })
@@ -164,7 +199,7 @@ export async function writeProcessedImage(
     );
   }
 
-  const storageKey = buildStorageKey(now);
+  const storageKey = buildStorageKey(now, profile.folder);
   const absolute = resolveStorageKey(storageKey);
   await mkdir(path.dirname(absolute), { recursive: true });
   await writeFile(absolute, output);
@@ -211,10 +246,14 @@ export async function deleteStoredImage(key: string): Promise<boolean> {
  * Validate the combined size and count of a batch before any of it is decoded.
  * Checked first so an oversized request is refused cheaply.
  */
-export function assertBatchWithinLimits(sizes: number[]): void {
-  if (sizes.length > MAX_IMAGES) {
+export function assertBatchWithinLimits(
+  sizes: number[],
+  maxCount: number = MAX_IMAGES,
+  subject: string = "A post",
+): void {
+  if (sizes.length > maxCount) {
     throw new ImageRejectedError(
-      `A post may carry at most ${MAX_IMAGES} images (received ${sizes.length})`,
+      `${subject} may carry at most ${maxCount} images (received ${sizes.length})`,
     );
   }
   const total = sizes.reduce((sum, n) => sum + n, 0);

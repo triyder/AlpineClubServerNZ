@@ -12,6 +12,7 @@ import {
   serializeOtherLodge,
 } from "@/lib/other-lodges";
 import { replaceAmenities } from "@/lib/other-lodge-amenities";
+import { validateLodgePictures } from "@/lib/lodge-pictures";
 
 /** PATCH /api/admin/other-lodges/:id — update fields. */
 export async function PATCH(
@@ -68,6 +69,25 @@ export async function PATCH(
   if (parsed.data.bedCapacity !== undefined)
     data.bedCapacity = parsed.data.bedCapacity;
   Object.assign(data, lodgeDetailColumns(parsed.data));
+
+  // The picture and logo: a string chooses one from the library, null clears it,
+  // absent leaves it alone. Checked against the library first.
+  if (parsed.data.imageId !== undefined || parsed.data.logoId !== undefined) {
+    const pictureError = await validateLodgePictures(parsed.data);
+    if (pictureError) {
+      return NextResponse.json({ error: pictureError }, { status: 400 });
+    }
+  }
+  if (parsed.data.imageId !== undefined) {
+    data.image = parsed.data.imageId
+      ? { connect: { id: parsed.data.imageId } }
+      : { disconnect: true };
+  }
+  if (parsed.data.logoId !== undefined) {
+    data.logo = parsed.data.logoId
+      ? { connect: { id: parsed.data.logoId } }
+      : { disconnect: true };
+  }
 
   const amenities = parsed.data.amenities;
   if (Object.keys(data).length === 0 && amenities === undefined) {

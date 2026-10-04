@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import {
+  imageRefSelect,
+  toImageRef,
+  type LodgeImageRef,
+} from "@/lib/image-library";
 
 /**
  * Helpers for the central "Other lodges" registry (Admin -> Lodges). Replicates
@@ -63,6 +68,8 @@ export const otherLodgeSelect = {
     select: { name: true, description: true },
     orderBy: { name: "asc" },
   },
+  image: { select: imageRefSelect },
+  logo: { select: imageRefSelect },
   sourceClubId: true,
   sourceClub: { select: { id: true, name: true, code: true } },
   lastUpdatedByClubId: true,
@@ -139,6 +146,9 @@ function serializeLodgeDetail(lodge: OtherLodgeRecord): SerializedLodgeDetail {
 
 export interface SerializedOtherLodge extends SerializedLodgeDetail {
   id: string;
+  /** The picture and logo chosen from the image library, if any. */
+  image: LodgeImageRef | null;
+  logo: LodgeImageRef | null;
   name: string;
   location: string | null;
   bookingOfficerName: string | null;
@@ -164,6 +174,8 @@ export function serializeOtherLodge(
     bookingOfficerPhone: lodge.bookingOfficerPhone,
     bedCapacity: lodge.bedCapacity,
     ...serializeLodgeDetail(lodge),
+    image: toImageRef(lodge.image),
+    logo: toImageRef(lodge.logo),
     sourceClub: lodge.sourceClub
       ? {
           id: lodge.sourceClub.id,
@@ -389,6 +401,17 @@ export function amenityCreateRows(list: ReadonlyArray<AmenityLike>) {
   }));
 }
 
+/**
+ * The lodge's picture and logo, chosen from the image library. ADMIN schemas
+ * only: a club's upload cannot set them, so this is deliberately not part of
+ * `lodgeDetailShape`. Existence and type are checked against the library by
+ * `validateLodgePictures`; this only bounds the shape.
+ */
+const lodgePictureShape = {
+  imageId: z.string().trim().min(1).max(64).nullable().optional(),
+  logoId: z.string().trim().min(1).max(64).nullable().optional(),
+};
+
 export const otherLodgeCreateSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -399,6 +422,7 @@ export const otherLodgeCreateSchema = z
     // Informational bed count; non-negative, capped well above any real lodge.
     bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
     ...lodgeDetailShape,
+    ...lodgePictureShape,
   })
   .strict();
 export type OtherLodgeCreateInput = z.infer<typeof otherLodgeCreateSchema>;
@@ -464,6 +488,7 @@ export const otherLodgeUpdateSchema = z
     bookingOfficerPhone: z.string().trim().max(50).nullable().optional(),
     bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
     ...lodgeDetailShape,
+    ...lodgePictureShape,
   })
   .strict();
 export type OtherLodgeUpdateInput = z.infer<typeof otherLodgeUpdateSchema>;
