@@ -103,6 +103,7 @@ npm run dev           # http://localhost:3000
 | `OtherLodge` | Central registry of external/partner lodges. Every row is handed out to every connected club; `sourceClub` records which club uploaded it. Also holds the lodge details below. |
 | `Amenity`  | A free-form extra a lodge offers (name + optional description). Many to one `OtherLodge`, unique name per lodge, deleted with the lodge. |
 | `SyncIssue` | An open or cleared condition for an administrator (starts with `VERSION_MISMATCH`). |
+| `Image`    | A picture or logo in the image library. `kind` (`IMAGE` / `LOGO`) is fixed at upload; a lodge points at one of each (`OtherLodge.imageId`, `logoId`). |
 
 ### "Other lodges" distribution
 
@@ -132,6 +133,32 @@ upload and leaves it alone when absent; every other field left out of an upload
 is left unchanged. Pull returns every field and the amenity list. Changing a
 lodge's amenities moves the lodge's `updatedAt`, so the incremental pull sees it.
 Admins edit all of it on `/lodges`.
+
+#### Image manager and lodge pictures
+
+`/admin/image-manager` is the library of pictures stored on this server (under
+`UPLOADS_DIR`, the same volume as post images). Administrators and managers can:
+
+- **Upload** one or more pictures, choosing whether they are **lodge images** or
+  **logos**. At most 10 files and 9 MB in total per upload (the proxy caps the
+  body at 10 MB). Every file is checked by its leading bytes (not its declared
+  type), decoded within a pixel ceiling, resized, stripped of its metadata
+  (including GPS location) and stored as WebP; the original is never kept. Lodge
+  images are stored at most 1920 by 1080; logos at most 600 by 600 and keep their
+  transparency. A file that fails is reported and the rest of the batch still goes in.
+- **Rename** a picture (a label only; its type cannot be changed).
+- **Delete** a picture. Refused, naming the lodges, while a lodge is using it.
+
+On `/lodges`, the add/edit popup has a **Lodge image** and a **Lodge logo**
+chooser. Each offers only pictures of the matching type, and the server refuses
+a mismatch or a picture that no longer exists. Choosing, changing or removing
+them is part of saving the lodge.
+
+Pictures are served at `/api/images/library/<id>.webp`, an unguessable
+capability link like post images (a browser `<img>` cannot send credentials), so
+a leaked link exposes that one picture only. **Lodge pictures are not yet sent to
+connected clubs**: they are admin-only until the club-facing API is extended (an
+API version change, with the booking site updated to match).
 
 Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
 [`prisma/migrations/0000_init`](prisma/migrations/0000_init).
@@ -165,6 +192,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys.          |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |
+| `/admin/image-manager` | admin/manager | **Image manager** — upload pictures and logos, rename them, delete the ones no lodge uses. See below. |
 | `/issues`    | admin/manager | **Issues** — conditions that need a person to look at them, starting with clubs whose API version differs from this server's. An issue stays until it is flagged as cleared. |
 | `/audit`     | admin/manager | **Audit log** — all activity in and out of the server (client uploads/pulls, connections, admin actions), filterable + paginated. |
 | `/profile`   | session       | Account info, **change password**, **light/dark theme**, sign out. |
@@ -293,6 +321,9 @@ Vitest covers the security-critical units and the registration endpoint:
   unapproved / valid);
 - club registration idempotency;
 - `POST /api/v1/clubs/register` (201 / 400 / 200-existing / 429 rate limit);
+- the image library: upload processing (profiles, transparency, size limits, EXIF
+  strip), the admin API, serving, lodge picture/logo validation, and the proxy
+  coverage guard;
 - the API version check: version parsing and comparison, `GET /api/v1/version`,
   the 409 gate on data routes (and a census that every v1 handler runs it), the
   contract fingerprint, the push hold for a mismatched club, and clearing issues.
