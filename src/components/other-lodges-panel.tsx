@@ -23,6 +23,33 @@ import {
 } from "@/components/ui/table";
 import type { SerializedOtherLodge } from "@/lib/other-lodges";
 
+type BooleanFieldKey =
+  | "requiresLodgeCustodian"
+  | "freeWifi"
+  | "quietRoom"
+  | "dryingRoom"
+  | "sharedKitchen"
+  | "wheelchairAccessible"
+  | "breakfastIncluded"
+  | "lunchIncluded"
+  | "dinnerIncluded";
+
+// `satisfies` keeps this list in step with SerializedOtherLodge: a key that is
+// not a boolean field on the lodge is a type error.
+const BOOLEAN_FIELDS: { key: BooleanFieldKey; label: string }[] = [
+  { key: "requiresLodgeCustodian", label: "Requires lodge custodian" },
+  { key: "freeWifi", label: "Free wifi" },
+  { key: "quietRoom", label: "Quiet room" },
+  { key: "dryingRoom", label: "Drying room" },
+  { key: "sharedKitchen", label: "Shared kitchen" },
+  { key: "wheelchairAccessible", label: "Wheelchair accessible" },
+  { key: "breakfastIncluded", label: "Breakfast included" },
+  { key: "lunchIncluded", label: "Lunch included" },
+  { key: "dinnerIncluded", label: "Dinner included" },
+] satisfies { key: keyof SerializedOtherLodge; label: string }[];
+
+type AmenityRow = { name: string; description: string };
+
 type FormState = {
   name: string;
   location: string;
@@ -30,7 +57,26 @@ type FormState = {
   bookingOfficerEmail: string;
   bookingOfficerPhone: string;
   bedCapacity: string;
+  siteUrl: string;
+  bookingPath: string;
+  cancellationPeriod: string;
+  winterSeasonStart: string;
+  summerSeasonStart: string;
+  flags: Record<BooleanFieldKey, boolean>;
+  amenities: AmenityRow[];
   distribute: boolean;
+};
+
+const emptyFlags: Record<BooleanFieldKey, boolean> = {
+  requiresLodgeCustodian: false,
+  freeWifi: false,
+  quietRoom: false,
+  dryingRoom: false,
+  sharedKitchen: false,
+  wheelchairAccessible: false,
+  breakfastIncluded: false,
+  lunchIncluded: false,
+  dinnerIncluded: false,
 };
 
 const emptyForm: FormState = {
@@ -40,6 +86,13 @@ const emptyForm: FormState = {
   bookingOfficerEmail: "",
   bookingOfficerPhone: "",
   bedCapacity: "",
+  siteUrl: "",
+  bookingPath: "",
+  cancellationPeriod: "",
+  winterSeasonStart: "",
+  summerSeasonStart: "",
+  flags: emptyFlags,
+  amenities: [],
   distribute: false,
 };
 
@@ -51,11 +104,25 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
     bookingOfficerEmail: lodge.bookingOfficerEmail ?? "",
     bookingOfficerPhone: lodge.bookingOfficerPhone ?? "",
     bedCapacity: lodge.bedCapacity === null ? "" : String(lodge.bedCapacity),
+    siteUrl: lodge.siteUrl ?? "",
+    bookingPath: lodge.bookingPath ?? "",
+    cancellationPeriod: lodge.cancellationPeriod ?? "",
+    winterSeasonStart: lodge.winterSeasonStart ?? "",
+    summerSeasonStart: lodge.summerSeasonStart ?? "",
+    flags: Object.fromEntries(
+      BOOLEAN_FIELDS.map(({ key }) => [key, lodge[key]]),
+    ) as Record<BooleanFieldKey, boolean>,
+    amenities: lodge.amenities.map((a) => ({
+      name: a.name,
+      description: a.description ?? "",
+    })),
     distribute: lodge.distribute,
   };
 }
 
 // Blank text fields save as null; bed capacity parses to an integer or null.
+// Amenity rows with no name are dropped (an untouched blank row is not an
+// amenity), and the list is always sent so removing the last one clears it.
 function formPayload(form: FormState) {
   const capacity = form.bedCapacity.trim();
   return {
@@ -65,6 +132,18 @@ function formPayload(form: FormState) {
     bookingOfficerEmail: form.bookingOfficerEmail.trim() || null,
     bookingOfficerPhone: form.bookingOfficerPhone.trim() || null,
     bedCapacity: capacity === "" ? null : Number(capacity),
+    siteUrl: form.siteUrl.trim() || null,
+    bookingPath: form.bookingPath.trim() || null,
+    cancellationPeriod: form.cancellationPeriod.trim() || null,
+    winterSeasonStart: form.winterSeasonStart || null,
+    summerSeasonStart: form.summerSeasonStart || null,
+    ...form.flags,
+    amenities: form.amenities
+      .filter((a) => a.name.trim() !== "")
+      .map((a) => ({
+        name: a.name.trim(),
+        description: a.description.trim() || null,
+      })),
     distribute: form.distribute,
   };
 }
@@ -132,6 +211,18 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
     }
     if (capacity !== "" && Number(capacity) > 100_000) {
       setError("Bed capacity looks too large. Enter a realistic number.");
+      return;
+    }
+    const named = form.amenities.filter((a) => a.name.trim() !== "");
+    if (named.length > 50) {
+      setError("A lodge can have at most 50 amenities.");
+      return;
+    }
+    if (
+      new Set(named.map((a) => a.name.trim().toLowerCase())).size !==
+      named.length
+    ) {
+      setError("Amenity names must be different from each other.");
       return;
     }
     setSaving(true);
@@ -318,6 +409,174 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                 />
               </div>
             </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="ol-site-url">Site URL</Label>
+                <Input
+                  id="ol-site-url"
+                  type="url"
+                  placeholder="https://"
+                  value={form.siteUrl}
+                  maxLength={500}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, siteUrl: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ol-booking-path">Booking path</Label>
+                <Input
+                  id="ol-booking-path"
+                  value={form.bookingPath}
+                  maxLength={300}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, bookingPath: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ol-cancellation">Cancellation period</Label>
+                <Input
+                  id="ol-cancellation"
+                  value={form.cancellationPeriod}
+                  maxLength={200}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      cancellationPeriod: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="hidden sm:block" />
+              <div className="space-y-2">
+                <Label htmlFor="ol-winter-start">Winter season start date</Label>
+                <Input
+                  id="ol-winter-start"
+                  type="date"
+                  value={form.winterSeasonStart}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      winterSeasonStart: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ol-summer-start">Summer season start date</Label>
+                <Input
+                  id="ol-summer-start"
+                  type="date"
+                  value={form.summerSeasonStart}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      summerSeasonStart: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Facilities</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {BOOLEAN_FIELDS.map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[var(--primary)]"
+                      checked={form.flags[key]}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          flags: { ...p.flags, [key]: e.target.checked },
+                        }))
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Amenities</legend>
+              {form.amenities.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No amenities. Add anything else the lodge offers.
+                </p>
+              ) : null}
+              {form.amenities.map((amenity, index) => (
+                <div
+                  key={index}
+                  className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]"
+                >
+                  <Input
+                    aria-label={`Amenity ${index + 1} name`}
+                    placeholder="Name"
+                    value={amenity.name}
+                    maxLength={120}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        amenities: p.amenities.map((a, i) =>
+                          i === index ? { ...a, name: e.target.value } : a,
+                        ),
+                      }))
+                    }
+                  />
+                  <Input
+                    aria-label={`Amenity ${index + 1} description`}
+                    placeholder="Description (optional)"
+                    value={amenity.description}
+                    maxLength={1000}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        amenities: p.amenities.map((a, i) =>
+                          i === index
+                            ? { ...a, description: e.target.value }
+                            : a,
+                        ),
+                      }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Remove amenity ${index + 1}`}
+                    onClick={() =>
+                      setForm((p) => ({
+                        ...p,
+                        amenities: p.amenities.filter((_, i) => i !== index),
+                      }))
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={form.amenities.length >= 50}
+                onClick={() =>
+                  setForm((p) => ({
+                    ...p,
+                    amenities: [...p.amenities, { name: "", description: "" }],
+                  }))
+                }
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add amenity
+              </Button>
+            </fieldset>
+
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -369,6 +628,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                     <TableHead>Location</TableHead>
                     <TableHead>Booking officer</TableHead>
                     <TableHead className="text-right">Beds</TableHead>
+                    <TableHead>Details</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Distribution</TableHead>
                     {canManage ? (
@@ -402,6 +662,60 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {lodge.bedCapacity ?? "—"}
+                      </TableCell>
+                      <TableCell className="max-w-xs text-xs text-muted-foreground">
+                        {lodge.siteUrl && /^https?:\/\//i.test(lodge.siteUrl) ? (
+                          <div>
+                            <a
+                              href={lodge.siteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline"
+                            >
+                              {lodge.siteUrl}
+                            </a>
+                            {lodge.bookingPath ? ` · ${lodge.bookingPath}` : ""}
+                          </div>
+                        ) : null}
+                        {BOOLEAN_FIELDS.filter(({ key }) => lodge[key]).length >
+                        0 ? (
+                          <div>
+                            {BOOLEAN_FIELDS.filter(({ key }) => lodge[key])
+                              .map(({ label }) => label)
+                              .join(", ")}
+                          </div>
+                        ) : null}
+                        {lodge.cancellationPeriod ? (
+                          <div>Cancellation: {lodge.cancellationPeriod}</div>
+                        ) : null}
+                        {lodge.winterSeasonStart || lodge.summerSeasonStart ? (
+                          <div>
+                            {lodge.winterSeasonStart
+                              ? `Winter from ${lodge.winterSeasonStart}`
+                              : ""}
+                            {lodge.winterSeasonStart && lodge.summerSeasonStart
+                              ? " · "
+                              : ""}
+                            {lodge.summerSeasonStart
+                              ? `Summer from ${lodge.summerSeasonStart}`
+                              : ""}
+                          </div>
+                        ) : null}
+                        {lodge.amenities.length > 0 ? (
+                          <div title={lodge.amenities.map((a) => a.name).join(", ")}>
+                            {lodge.amenities.length} amenit
+                            {lodge.amenities.length === 1 ? "y" : "ies"}:{" "}
+                            {lodge.amenities.map((a) => a.name).join(", ")}
+                          </div>
+                        ) : null}
+                        {!lodge.siteUrl &&
+                        !lodge.cancellationPeriod &&
+                        !lodge.winterSeasonStart &&
+                        !lodge.summerSeasonStart &&
+                        lodge.amenities.length === 0 &&
+                        BOOLEAN_FIELDS.every(({ key }) => !lodge[key])
+                          ? "—"
+                          : null}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         <div>
