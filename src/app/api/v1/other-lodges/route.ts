@@ -35,9 +35,9 @@ function rateLimited(resetAt: number) {
 }
 
 /**
- * GET /api/v1/other-lodges — PULL distribution.
+ * GET /api/v1/other-lodges — PULL.
  *
- * Returns every registry entry an admin has marked `distribute = true`, for a
+ * Returns every registry entry, for a
  * connected club's local AlpineClubBookingsNZ install to ingest. Optional
  * `?since=<ISO>` returns only rows changed after that cursor for incremental
  * sync; the response `cursor` is the newest `updatedAt` seen.
@@ -80,7 +80,6 @@ export async function GET(req: Request) {
 
   const lodges = await prisma.otherLodge.findMany({
     where: {
-      distribute: true,
       ...(since ? { updatedAt: { gt: since } } : {}),
     },
     orderBy: otherLodgeOrderBy(),
@@ -117,7 +116,7 @@ type OtherLodgeMutableFields = {
 } & LodgeDetailColumns;
 
 // Build the create/update column data from a validated upload item. Blank text
-// folds to null; `distribute` and `sourceClub` are never set from client input.
+// folds to null; `sourceClub` is never set from client input.
 function itemData(item: OtherLodgeUploadItem): OtherLodgeMutableFields {
   const data: OtherLodgeMutableFields = {};
   if (item.location !== undefined)
@@ -151,13 +150,12 @@ function itemDiffers(
  *
  * A club pushes its "Other lodges" entries. Each is keyed by unique `name` and
  * OWNED by the uploading club:
- *   - new name           -> created (sourceClub = this club, distribute = false)
+ *   - new name           -> created (sourceClub = this club)
  *   - name owned by club  -> updated (contact/capacity fields only)
  *   - name owned by other -> skipped (a club can't clobber central or another
- *                            club's entry, nor flip its distribution marker)
+ *                            club's entry)
  *
- * Uploads never set `distribute`; a central admin marks entries for
- * distribution afterwards, and marked rows flow back out via the PULL endpoint.
+ * Every stored entry then flows back out to every club via the PULL endpoint.
  */
 export async function POST(req: Request) {
   const ip = clientIp(req);
@@ -220,7 +218,6 @@ export async function POST(req: Request) {
             sourceClubId: club.id,
             lastUpdatedByClubId: club.id,
             lastUploadedAt: now,
-            distribute: false,
           },
         });
         created++;

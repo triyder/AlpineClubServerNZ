@@ -97,7 +97,6 @@ const lodgeFixture = {
   summerSeasonStart: null,
   // One entry, so the guard pins the amenity object's keys as well as the array.
   amenities: [{ name: "n", description: null }],
-  distribute: true,
   sourceClubId: null,
   sourceClub: null,
   lastUpdatedByClubId: null,

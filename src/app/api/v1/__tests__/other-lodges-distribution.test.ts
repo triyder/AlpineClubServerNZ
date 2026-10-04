@@ -61,7 +61,6 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   winterSeasonStart: null,
   summerSeasonStart: null,
   amenities: [],
-  distribute: true,
   sourceClubId: null,
   sourceClub: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -102,13 +101,13 @@ describe("GET /api/v1/other-lodges (pull)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns distribute=true rows with a cursor", async () => {
+  it("returns every lodge, unfiltered, with a cursor", async () => {
     authenticate.mockResolvedValue(authOk(["lodges:read"]));
     findMany.mockResolvedValue([dbRow()]);
     const res = await GET(req("GET", url));
     expect(res.status).toBe(200);
-    // Only distributed rows are queried.
-    expect(findMany.mock.calls[0][0].where).toMatchObject({ distribute: true });
+    // Every lodge is distributed: no per-row marker narrows the query.
+    expect(findMany.mock.calls[0][0].where ?? {}).not.toHaveProperty("distribute");
     const json = await res.json();
     expect(json.count).toBe(1);
     expect(json.lodges[0]).toMatchObject({ name: "Whakapapa Lodge" });
@@ -148,7 +147,7 @@ describe("POST /api/v1/other-lodges (upload)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("creates a new lodge stamped with the club as source, not distributed", async () => {
+  it("creates a new lodge stamped with the club as source", async () => {
     authenticate.mockResolvedValue(authOk(["lodges:write"]));
     findUnique.mockResolvedValue(null);
     create.mockResolvedValue({});
@@ -160,7 +159,7 @@ describe("POST /api/v1/other-lodges (upload)", () => {
     expect(json).toMatchObject({ created: 1, updated: 0, skipped: 0 });
     const data = create.mock.calls[0][0].data;
     expect(data.sourceClubId).toBe("club_1");
-    expect(data.distribute).toBe(false);
+    expect(data).not.toHaveProperty("distribute");
   });
 
   it("updates an entry owned by the same club", async () => {
@@ -172,9 +171,8 @@ describe("POST /api/v1/other-lodges (upload)", () => {
     );
     const json = await res.json();
     expect(json).toMatchObject({ created: 0, updated: 1, skipped: 0 });
-    // The update must not touch distribution or provenance.
+    // The update must not touch provenance.
     const data = update.mock.calls[0][0].data;
-    expect(data).not.toHaveProperty("distribute");
     expect(data).not.toHaveProperty("sourceClubId");
   });
 

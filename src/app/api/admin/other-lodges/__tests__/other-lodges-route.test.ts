@@ -60,7 +60,6 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   winterSeasonStart: null,
   summerSeasonStart: null,
   amenities: [],
-  distribute: false,
   sourceClubId: null,
   sourceClub: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -86,16 +85,17 @@ describe("GET /api/admin/other-lodges", () => {
   });
 
   it("lists serialized lodges", async () => {
-    findMany.mockResolvedValue([dbRow({ distribute: true })]);
+    findMany.mockResolvedValue([dbRow()]);
     const res = await GET();
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.otherLodges).toHaveLength(1);
     expect(json.otherLodges[0]).toMatchObject({
       name: "Ruapehu Lodge",
-      distribute: true,
       sourceClub: null,
     });
+    // The per-row distribute marker is gone: every lodge is distributed.
+    expect(json.otherLodges[0]).not.toHaveProperty("distribute");
     // Serialized dates are ISO strings.
     expect(typeof json.otherLodges[0].createdAt).toBe("string");
   });
@@ -105,14 +105,20 @@ describe("POST /api/admin/other-lodges", () => {
   it("creates a lodge (201) with normalized blanks", async () => {
     create.mockResolvedValue(dbRow({ name: "Tasman Lodge" }));
     const res = await POST(
-      jsonReq({ name: "  Tasman Lodge  ", location: "   ", distribute: true }),
+      jsonReq({ name: "  Tasman Lodge  ", location: "   " }),
     );
     expect(res.status).toBe(201);
     const arg = create.mock.calls[0][0];
     expect(arg.data.name).toBe("Tasman Lodge");
     expect(arg.data.location).toBeNull(); // whitespace folded to null
-    expect(arg.data.distribute).toBe(true);
+    expect(arg.data).not.toHaveProperty("distribute");
     expect(auditCreate).toHaveBeenCalled();
+  });
+
+  it("rejects the removed distribute field (400)", async () => {
+    const res = await POST(jsonReq({ name: "Tasman Lodge", distribute: true }));
+    expect(res.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("rejects a missing name (400)", async () => {
@@ -144,19 +150,26 @@ describe("PATCH /api/admin/other-lodges/[id]", () => {
 
   it("returns 404 for an unknown lodge", async () => {
     findUnique.mockResolvedValue(null);
-    const res = await PATCH(jsonReq({ distribute: true }, "PATCH"), ctx("nope"));
+    const res = await PATCH(jsonReq({ bedCapacity: 5 }, "PATCH"), ctx("nope"));
     expect(res.status).toBe(404);
   });
 
-  it("toggles distribution without clearing other fields", async () => {
+  it("updates only the fields sent, without clearing the others", async () => {
     findUnique.mockResolvedValue(dbRow());
-    update.mockResolvedValue(dbRow({ distribute: true }));
-    const res = await PATCH(jsonReq({ distribute: true }, "PATCH"), ctx("l1"));
+    update.mockResolvedValue(dbRow({ bedCapacity: 12 }));
+    const res = await PATCH(jsonReq({ bedCapacity: 12 }, "PATCH"), ctx("l1"));
     expect(res.status).toBe(200);
     const arg = update.mock.calls[0][0];
-    // Only `distribute` is in the update payload — a partial PATCH.
-    expect(Object.keys(arg.data)).toEqual(["distribute"]);
-    expect(arg.data.distribute).toBe(true);
+    // Only `bedCapacity` is in the update payload — a partial PATCH.
+    expect(Object.keys(arg.data)).toEqual(["bedCapacity"]);
+    expect(arg.data.bedCapacity).toBe(12);
+  });
+
+  it("rejects the removed distribute field (400)", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    const res = await PATCH(jsonReq({ distribute: true }, "PATCH"), ctx("l1"));
+    expect(res.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

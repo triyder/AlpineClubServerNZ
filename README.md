@@ -100,18 +100,18 @@ npm run dev           # http://localhost:3000
 | `Club`     | A linked lodge/club. Lifecycle: `PENDING → APPROVED / REJECTED`.         |
 | `ApiToken` | API keys issued to an approved club. Only the SHA-256 hash is stored.   |
 | `AuditLog` | Records client connections/requests and notable admin actions.          |
-| `OtherLodge` | Central registry of external/partner lodges. `distribute` marks a row for hand-out to connected clubs; `sourceClub` records which club uploaded it. Also holds the lodge details below. |
+| `OtherLodge` | Central registry of external/partner lodges. Every row is handed out to every connected club; `sourceClub` records which club uploaded it. Also holds the lodge details below. |
 | `Amenity`  | A free-form extra a lodge offers (name + optional description). Many to one `OtherLodge`, unique name per lodge, deleted with the lodge. |
 | `SyncIssue` | An open or cleared condition for an administrator (starts with `VERSION_MISMATCH`). |
 
-### "Other lodges" distribution (in progress)
+### "Other lodges" distribution
 
 This replicates the AlpineClubBookingsNZ "Other lodges" admin panel, but here it
 is the **shared source of truth**. Admins manage the registry at `/lodges`
-(`/api/admin/other-lodges` CRUD) and toggle `distribute` per row. The end goal:
-connected clubs upload their entries, admins mark rows for distribution, and
-marked rows are handed back out to every club connected via its API key. Both
-the admin registry and the client upload/pull endpoints are implemented — see
+(`/api/admin/other-lodges` CRUD). Connected clubs upload their entries and
+**every** entry is handed back out to every club connected via its API key —
+there is no per-row "distribute" switch (it was removed in API version 1.1;
+each club's nightly sync is what carries the registry out). See
 **Distribution loop** under the REST API section below.
 
 #### Lodge details and amenities (API version 1.1)
@@ -164,7 +164,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/register`  | public        | Lodge submits a link request.                                  |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys.          |
-| `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, mark for distribution, and see which club last updated each entry. |
+| `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |
 | `/issues`    | admin/manager | **Issues** — conditions that need a person to look at them, starting with clubs whose API version differs from this server's. An issue stays until it is flagged as cleared. |
 | `/audit`     | admin/manager | **Audit log** — all activity in and out of the server (client uploads/pulls, connections, admin actions), filterable + paginated. |
 | `/profile`   | session       | Account info, **change password**, **light/dark theme**, sign out. |
@@ -183,7 +183,7 @@ signs the user out to re-authenticate with the new credentials.
 | `POST /api/v1/clubs/register`| none (rate-limited) | Request linking. Creates a `PENDING` club. |
 | `POST /api/v1/sync`          | Bearer token | Push/pull sync batch for an approved club. |
 | `POST /api/v1/other-lodges`  | Bearer token (`lodges:write`) | Upload the club's "Other lodges" entries. |
-| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull all entries marked for distribution. |
+| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry. |
 | `GET  /api/v1/version`       | Bearer token (any approved club) | The server's **API version**, and whether the caller's matches. See below. |
 | `GET  /api/health`           | none        | Liveness + DB connectivity probe.          |
 
@@ -220,7 +220,8 @@ both directions until the club is upgraded.
 - **Comparing versions:** by integer parts, never as a number — `1.10` is not
   `1.1`. Canonical form only (`1.0`, not `01.0` or `1.00`).
 - **History:** `1.0` — the first versioned contract. `1.1` — lodge detail fields
-  and amenities (additive, but any bump pauses clubs until upgraded).
+  and amenities, and every lodge distributed (additive, but any bump pauses
+  clubs until upgraded).
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
@@ -233,14 +234,13 @@ both directions until the club is upgraded.
 1. A connected club **uploads** its entries: `POST /api/v1/other-lodges` with
    `{ "lodges": [ { "name": "...", "location": "...", "bedCapacity": 20 } ] }`.
    Each entry is keyed by unique `name` and **owned** by the uploading club —
-   new names are created (`distribute = false`), the club's own entries are
-   updated, and names owned centrally or by another club are **skipped** (no
-   clobber). Uploads never set the distribution marker.
-2. A **central admin** reviews `/lodges` and toggles `distribute` on the entries
-   that should be shared.
-3. Every connected club **pulls** the distributed set: `GET /api/v1/other-lodges`
-   returns all `distribute = true` entries. Pass `?since=<ISO>` for an
-   incremental pull; use the response `cursor` as the next `since`.
+   new names are created, the club's own entries are updated, and names owned
+   centrally or by another club are **skipped** (no clobber).
+2. A **central admin** can add and edit entries at `/lodges`; nothing needs to
+   be ticked for an entry to be shared.
+3. Every connected club **pulls** the registry: `GET /api/v1/other-lodges`
+   returns every entry. Pass `?since=<ISO>` for an incremental pull; use the
+   response `cursor` as the next `since`.
 
 Admin-only:
 

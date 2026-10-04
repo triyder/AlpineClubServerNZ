@@ -13,7 +13,7 @@ import {
 } from "@/lib/other-lodges";
 import { replaceAmenities } from "@/lib/other-lodge-amenities";
 
-/** PATCH /api/admin/other-lodges/:id — update fields / toggle distribution. */
+/** PATCH /api/admin/other-lodges/:id — update fields. */
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -54,7 +54,7 @@ export async function PATCH(
   }
 
   // Only assign the fields that were actually provided so a partial PATCH (e.g.
-  // just toggling `distribute`) never clears the other columns.
+  // just the bed count) never clears the other columns.
   const data: Prisma.OtherLodgeUpdateInput = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name.trim();
   if (parsed.data.location !== undefined)
@@ -68,8 +68,6 @@ export async function PATCH(
   if (parsed.data.bedCapacity !== undefined)
     data.bedCapacity = parsed.data.bedCapacity;
   Object.assign(data, lodgeDetailColumns(parsed.data));
-  if (parsed.data.distribute !== undefined)
-    data.distribute = parsed.data.distribute;
 
   const amenities = parsed.data.amenities;
   if (Object.keys(data).length === 0 && amenities === undefined) {

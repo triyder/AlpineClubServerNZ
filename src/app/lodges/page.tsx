@@ -18,8 +18,8 @@ export default async function LodgesPage() {
           <h1 className="text-2xl font-bold tracking-tight">Lodges</h1>
           <p className="text-muted-foreground">
             The central &ldquo;Other lodges&rdquo; registry. Connected clubs
-            upload entries; those you mark for distribution are shared back out
-            to every club connected via its API key.
+            upload entries, and every entry is shared back out to every club
+            connected via its API key.
           </p>
         </div>
         <OtherLodgesPanel canManage={canManage} />

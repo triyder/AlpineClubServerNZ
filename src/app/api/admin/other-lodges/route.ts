@@ -72,7 +72,6 @@ export async function POST(req: Request) {
         ...(parsed.data.amenities
           ? { amenities: { create: amenityCreateRows(parsed.data.amenities) } }
           : {}),
-        distribute: parsed.data.distribute ?? false,
       },
       select: otherLodgeSelect,
     });

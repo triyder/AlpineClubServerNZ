@@ -65,7 +65,6 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   winterSeasonStart: null,
   summerSeasonStart: null,
   amenities: [] as Array<{ name: string; description: string | null }>,
-  distribute: false,
   sourceClubId: null,
   sourceClub: null,
   lastUpdatedByClubId: null,
@@ -149,10 +148,10 @@ describe("POST /api/admin/other-lodges with the new fields", () => {
 describe("PATCH /api/admin/other-lodges/:id with the new fields", () => {
   it("a partial update that names no detail field leaves every detail column alone", async () => {
     findUnique.mockResolvedValue(dbRow({ freeWifi: true }));
-    update.mockResolvedValue(dbRow({ freeWifi: true, distribute: true }));
-    const res = await PATCH(jsonReq({ distribute: true }, "PATCH"), ctx);
+    update.mockResolvedValue(dbRow({ freeWifi: true, bedCapacity: 12 }));
+    const res = await PATCH(jsonReq({ bedCapacity: 12 }, "PATCH"), ctx);
     expect(res.status).toBe(200);
-    expect(update.mock.calls[0][0].data).toEqual({ distribute: true });
+    expect(update.mock.calls[0][0].data).toEqual({ bedCapacity: 12 });
     expect(transaction).not.toHaveBeenCalled();
   });
 

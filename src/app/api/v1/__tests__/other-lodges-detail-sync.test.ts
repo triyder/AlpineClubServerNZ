@@ -72,7 +72,6 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   winterSeasonStart: null,
   summerSeasonStart: null,
   amenities: [] as Array<{ name: string; description: string | null }>,
-  distribute: true,
   sourceClubId: "club_1",
   sourceClub: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -120,7 +119,7 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).created).toBe(1);
     const data = create.mock.calls[0][0].data;
-    expect(data).toMatchObject({ freeWifi: true, siteUrl: "https://w.example", distribute: false });
+    expect(data).toMatchObject({ freeWifi: true, siteUrl: "https://w.example" });
     expect(data.winterSeasonStart.toISOString()).toBe("2026-06-01T00:00:00.000Z");
     expect(data.amenities).toEqual({ create: [{ name: "Sauna", description: "Wood fired" }] });
   });
@@ -249,8 +248,7 @@ describe("GET /api/v1/other-lodges (pull) with the new fields", () => {
       summerSeasonStart: null,
       amenities: [{ name: "Sauna", description: null }],
     });
-    // Never leaks provenance or the distribution marker.
-    expect(lodge).not.toHaveProperty("distribute");
+    // Never leaks provenance.
     expect(lodge).not.toHaveProperty("sourceClub");
   });
 });

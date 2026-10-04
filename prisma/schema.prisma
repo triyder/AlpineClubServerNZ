@@ -211,12 +211,10 @@ model AuditLog {
 // ---------------------------------------------------------------------------
 // Other Lodges — the central registry of external / partner lodges. Replicates
 // the AlpineClubBookingsNZ "Other lodges" admin panel, but here it is the
-// SHARED source of truth: connected clubs upload their entries, admins mark
-// rows for distribution, and marked rows are handed back out to every connected
-// club via the clubs API key.
+// SHARED source of truth: connected clubs upload their entries and every entry
+// is handed back out to every connected club via the clubs API key.
 //
 // `name` is unique so the registry backs a name-first list / drop-down.
-// `distribute` is the marker that a row should be pushed out to all clubs.
 // `sourceClub` records which club uploaded it (null = created centrally).
 // ---------------------------------------------------------------------------
 
@@ -250,9 +248,6 @@ model OtherLodge {
 
   amenities Amenity[]
 
-  // Distribution marker: true = include when distributing to connected clubs.
-  distribute Boolean @default(false)
-
   // Provenance: the club that uploaded this entry (null = created centrally by
   // an admin on this server). SetNull so removing a club keeps the lodge.
   sourceClubId String? @map("source_club_id")
@@ -267,7 +262,6 @@ model OtherLodge {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([distribute])
   @@index([sourceClubId])
   @@map("other_lodges")
 }

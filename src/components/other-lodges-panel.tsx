@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Building, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -65,7 +64,6 @@ type FormState = {
   summerSeasonStart: string;
   flags: Record<BooleanFieldKey, boolean>;
   amenities: AmenityRow[];
-  distribute: boolean;
 };
 
 const emptyFlags: Record<BooleanFieldKey, boolean> = {
@@ -94,7 +92,6 @@ const emptyForm: FormState = {
   summerSeasonStart: "",
   flags: emptyFlags,
   amenities: [],
-  distribute: false,
 };
 
 function formFromLodge(lodge: SerializedOtherLodge): FormState {
@@ -117,7 +114,6 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
       name: a.name,
       description: a.description ?? "",
     })),
-    distribute: lodge.distribute,
   };
 }
 
@@ -145,7 +141,6 @@ function formPayload(form: FormState) {
         name: a.name.trim(),
         description: a.description.trim() || null,
       })),
-    distribute: form.distribute,
   };
 }
 
@@ -255,24 +250,6 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
     }
   }
 
-  async function toggleDistribute(lodge: SerializedOtherLodge) {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/other-lodges/${lodge.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ distribute: !lodge.distribute }),
-      });
-      if (!res.ok) throw new Error("Failed to update distribution");
-      await loadLodges();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function deleteLodge(lodge: SerializedOtherLodge) {
     if (
       !window.confirm(
@@ -309,8 +286,8 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
         <div>
           <h2 className="text-xl font-semibold">Other lodges</h2>
           <p className="text-sm text-muted-foreground">
-            The central registry of external / partner lodges. Entries marked{" "}
-            <strong>Distribute</strong> are shared out to every connected club.
+            The central registry of external / partner lodges. Every entry is
+            shared out to every connected club.
           </p>
         </div>
         {canManage ? (
@@ -581,17 +558,6 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
               </Button>
             </fieldset>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-[var(--primary)]"
-                checked={form.distribute}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, distribute: e.target.checked }))
-                }
-              />
-              Distribute this lodge to all connected clubs
-            </label>
             <div className="flex gap-2">
               <Button onClick={() => void submitForm()} disabled={saving}>
                 {saving ? "Saving…" : "Save"}
@@ -611,8 +577,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
             Registry
           </CardTitle>
           <CardDescription>
-            Entries marked for distribution are handed out to connected clubs via
-            their API key.
+            Every entry is handed out to connected clubs via their API key.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -633,7 +598,6 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                     <TableHead className="text-right">Beds</TableHead>
                     <TableHead>Details</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead>Distribution</TableHead>
                     {canManage ? (
                       <TableHead className="text-right">Actions</TableHead>
                     ) : null}
@@ -738,25 +702,6 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                             </div>
                           ) : null}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        {canManage ? (
-                          <button
-                            type="button"
-                            onClick={() => void toggleDistribute(lodge)}
-                            disabled={saving}
-                            className="disabled:opacity-50"
-                            title="Toggle distribution"
-                          >
-                            <Badge variant={lodge.distribute ? "success" : "secondary"}>
-                              {lodge.distribute ? "Distributing" : "Not distributed"}
-                            </Badge>
-                          </button>
-                        ) : (
-                          <Badge variant={lodge.distribute ? "success" : "secondary"}>
-                            {lodge.distribute ? "Distributing" : "Not distributed"}
-                          </Badge>
-                        )}
                       </TableCell>
                       {canManage ? (
                         <TableCell>

@@ -3,8 +3,8 @@ import type { Prisma } from "@prisma/client";
 
 /**
  * Helpers for the central "Other lodges" registry (Admin -> Lodges). Replicates
- * the AlpineClubBookingsNZ registry, plus the distribution marker and source-
- * club provenance that make this the shared, distributable source of truth.
+ * the AlpineClubBookingsNZ registry, plus source-club provenance, which make
+ * this the shared source of truth. Every entry is distributed to every club.
  */
 
 /**
@@ -63,7 +63,6 @@ export const otherLodgeSelect = {
     select: { name: true, description: true },
     orderBy: { name: "asc" },
   },
-  distribute: true,
   sourceClubId: true,
   sourceClub: { select: { id: true, name: true, code: true } },
   lastUpdatedByClubId: true,
@@ -146,7 +145,6 @@ export interface SerializedOtherLodge extends SerializedLodgeDetail {
   bookingOfficerEmail: string | null;
   bookingOfficerPhone: string | null;
   bedCapacity: number | null;
-  distribute: boolean;
   sourceClub: { id: string; name: string; code: string } | null;
   lastUpdatedByClub: { id: string; name: string; code: string } | null;
   lastUploadedAt: string | null;
@@ -166,7 +164,6 @@ export function serializeOtherLodge(
     bookingOfficerPhone: lodge.bookingOfficerPhone,
     bedCapacity: lodge.bedCapacity,
     ...serializeLodgeDetail(lodge),
-    distribute: lodge.distribute,
     sourceClub: lodge.sourceClub
       ? {
           id: lodge.sourceClub.id,
@@ -402,14 +399,13 @@ export const otherLodgeCreateSchema = z
     // Informational bed count; non-negative, capped well above any real lodge.
     bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
     ...lodgeDetailShape,
-    distribute: z.boolean().optional(),
   })
   .strict();
 export type OtherLodgeCreateInput = z.infer<typeof otherLodgeCreateSchema>;
 
 /**
  * Client-facing shape returned by the PULL endpoint (`GET /api/v1/other-lodges`).
- * Deliberately omits `distribute` and `sourceClub`: a pulling club only needs
+ * Deliberately omits `sourceClub`: a pulling club only needs
  * the lodge data, not which club submitted it or the internal marker. `id` and
  * `updatedAt` let clients dedupe and sync incrementally.
  */
@@ -440,8 +436,8 @@ export function serializeOtherLodgeForClient(
   };
 }
 
-// A single lodge entry a client uploads. Note: `distribute` is intentionally
-// NOT accepted from clients — only a central admin marks a row for distribution.
+// A single lodge entry a client uploads. Provenance (`sourceClub`) is never
+// accepted from clients; the server stamps it from the authenticated club.
 export const otherLodgeUploadItemSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -468,7 +464,6 @@ export const otherLodgeUpdateSchema = z
     bookingOfficerPhone: z.string().trim().max(50).nullable().optional(),
     bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
     ...lodgeDetailShape,
-    distribute: z.boolean().optional(),
   })
   .strict();
 export type OtherLodgeUpdateInput = z.infer<typeof otherLodgeUpdateSchema>;
