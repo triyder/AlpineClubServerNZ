@@ -4,6 +4,10 @@ import { prisma } from "@/lib/db";
 import { ConsoleShell } from "@/components/console-shell";
 import { TokenGenerator } from "@/components/token-generator";
 import {
+  ClubLodgesSelect,
+  type ClubLodgeOption,
+} from "@/components/club-lodges-select";
+import {
   approveClubAction,
   rejectClubAction,
   revokeTokenAction,
@@ -38,12 +42,31 @@ export default async function ClubsPage() {
 
   const canManage = session.role === "ADMIN" || session.role === "MANAGER";
 
-  const clubs = await prisma.club.findMany({
-    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-    include: {
-      apiTokens: { orderBy: { createdAt: "desc" } },
-    },
-  });
+  const [clubs, lodges] = await Promise.all([
+    prisma.club.findMany({
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      include: {
+        apiTokens: { orderBy: { createdAt: "desc" } },
+      },
+    }),
+    // Every lodge with its owner, so each club's chooser can offer the free ones
+    // and show who holds the rest.
+    prisma.otherLodge.findMany({
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        sourceClubId: true,
+        sourceClub: { select: { name: true } },
+      },
+    }),
+  ]);
+  const lodgeOptions: ClubLodgeOption[] = lodges.map((l) => ({
+    id: l.id,
+    name: l.name,
+    ownerClubId: l.sourceClubId,
+    ownerClubName: l.sourceClub?.name ?? null,
+  }));
 
   return (
     <ConsoleShell session={session}>
@@ -98,6 +121,23 @@ export default async function ClubsPage() {
                         </Button>
                       </form>
                     </div>
+                  ) : null}
+
+                  {club.status === "APPROVED" ? (
+                    <ClubLodgesSelect
+                      // Re-keyed on the saved list so a save (which refreshes this
+                      // page) resets the unsaved-changes state.
+                      key={`${club.id}:${lodgeOptions
+                        .filter((l) => l.ownerClubId === club.id)
+                        .map((l) => l.id)
+                        .join(",")}`}
+                      clubId={club.id}
+                      options={lodgeOptions}
+                      initialSelectedIds={lodgeOptions
+                        .filter((l) => l.ownerClubId === club.id)
+                        .map((l) => l.id)}
+                      canManage={canManage}
+                    />
                   ) : null}
 
                   {club.status === "APPROVED" ? (

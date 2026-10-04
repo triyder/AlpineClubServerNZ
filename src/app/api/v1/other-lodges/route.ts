@@ -8,6 +8,7 @@ import { recordAudit } from "@/lib/audit";
 import {
   amenitiesDiffer,
   amenityCreateRows,
+  buildOtherLodgePullEnvelope,
   lodgeDetailColumns,
   lodgeDetailDiffers,
   normalizeOtherLodgeText,
@@ -78,13 +79,22 @@ export async function GET(req: Request) {
     since = parsed;
   }
 
-  const lodges = await prisma.otherLodge.findMany({
-    where: {
-      ...(since ? { updatedAt: { gt: since } } : {}),
-    },
-    orderBy: otherLodgeOrderBy(),
-    select: otherLodgeSelect,
-  });
+  // The club's own lodges are read on EVERY pull, whatever `since` says: it is
+  // the club's whole current list and not a delta (see the envelope builder).
+  const [lodges, owned] = await Promise.all([
+    prisma.otherLodge.findMany({
+      where: {
+        ...(since ? { updatedAt: { gt: since } } : {}),
+      },
+      orderBy: otherLodgeOrderBy(),
+      select: otherLodgeSelect,
+    }),
+    prisma.otherLodge.findMany({
+      where: { sourceClubId: club.id },
+      orderBy: { name: "asc" },
+      select: { name: true },
+    }),
+  ]);
 
   const serialized = lodges.map(serializeOtherLodgeForClient);
   // Newest updatedAt across the returned set drives the next incremental pull.
@@ -102,7 +112,13 @@ export async function GET(req: Request) {
     metadata: { returned: serialized.length, since: sinceParam ?? null },
   });
 
-  return NextResponse.json({ lodges: serialized, cursor, count: serialized.length });
+  return NextResponse.json(
+    buildOtherLodgePullEnvelope({
+      lodges: serialized,
+      cursor,
+      ownLodgeNames: owned.map((l) => l.name),
+    }),
+  );
 }
 
 // Plain scalar fields common to create and update (no relation/atomic ops), so

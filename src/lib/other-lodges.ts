@@ -460,6 +460,30 @@ export function serializeOtherLodgeForClient(
   };
 }
 
+/**
+ * What `GET /api/v1/other-lodges` returns, built in ONE place so the contract
+ * fingerprint covers it and a field cannot be added to the response without the
+ * version moving.
+ *
+ * `ownLodgeNames` is the lodges the AUTHENTICATED club owns (set by an
+ * administrator on /clubs). It is sent on every pull, incremental or not,
+ * because it is the club's whole current list and not a delta: a lodge that was
+ * unticked has not changed, so no incremental row would ever announce its loss.
+ * By NAME, because that is how the booking site keys its own copy.
+ */
+export function buildOtherLodgePullEnvelope(input: {
+  lodges: DistributedOtherLodge[];
+  cursor: string | null;
+  ownLodgeNames: string[];
+}) {
+  return {
+    lodges: input.lodges,
+    cursor: input.cursor,
+    count: input.lodges.length,
+    ownLodgeNames: input.ownLodgeNames,
+  };
+}
+
 // A single lodge entry a client uploads. Provenance (`sourceClub`) is never
 // accepted from clients; the server stamps it from the authenticated club.
 export const otherLodgeUploadItemSchema = z
