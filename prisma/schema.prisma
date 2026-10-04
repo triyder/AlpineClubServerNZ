@@ -229,6 +229,27 @@ model OtherLodge {
   bookingOfficerPhone String? @map("booking_officer_phone") @db.VarChar(50)
   bedCapacity         Int?    @map("bed_capacity")
 
+  // Lodge details beyond contact and capacity. The yes/no columns are plain
+  // booleans defaulting to false, so an existing row reads "no" until someone
+  // says otherwise — "not known" and "no" are deliberately not distinguished.
+  // The two season dates are calendar dates WITH a year (DATE, no time of day).
+  siteUrl              String?   @map("site_url") @db.VarChar(500)
+  bookingPath          String?   @map("booking_path") @db.VarChar(300)
+  requiresLodgeCustodian Boolean @default(false) @map("requires_lodge_custodian")
+  freeWifi             Boolean   @default(false) @map("free_wifi")
+  quietRoom            Boolean   @default(false) @map("quiet_room")
+  dryingRoom           Boolean   @default(false) @map("drying_room")
+  sharedKitchen        Boolean   @default(false) @map("shared_kitchen")
+  wheelchairAccessible Boolean   @default(false) @map("wheelchair_accessible")
+  breakfastIncluded    Boolean   @default(false) @map("breakfast_included")
+  lunchIncluded        Boolean   @default(false) @map("lunch_included")
+  dinnerIncluded       Boolean   @default(false) @map("dinner_included")
+  cancellationPeriod   String?   @map("cancellation_period") @db.VarChar(200)
+  winterSeasonStart    DateTime? @map("winter_season_start") @db.Date
+  summerSeasonStart    DateTime? @map("summer_season_start") @db.Date
+
+  amenities Amenity[]
+
   // Distribution marker: true = include when distributing to connected clubs.
   distribute Boolean @default(false)
 
@@ -512,4 +533,24 @@ model SyncIssue {
 enum SyncIssueStatus {
   OPEN
   CLEARED
+}
+
+// ---------------------------------------------------------------------------
+// Amenities — free-form extras a lodge offers, many to one lodge. Name is unique
+// within a lodge. Cascade-deleted with the lodge. A change here counts as a
+// change to the lodge (its updatedAt is moved by the writer) so the incremental
+// pull sees it.
+// ---------------------------------------------------------------------------
+
+model Amenity {
+  id          String     @id @default(cuid())
+  lodgeId     String     @map("lodge_id")
+  lodge       OtherLodge @relation(fields: [lodgeId], references: [id], onDelete: Cascade)
+  name        String     @db.VarChar(120)
+  description String?    @db.VarChar(1000)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@unique([lodgeId, name])
+  @@map("amenities")
 }
