@@ -50,9 +50,6 @@ export function ConsoleShell({
                   </Link>
                 </>
               )}
-              <Link href="/profile" className="hover:text-foreground">
-                Profile
-              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">
