@@ -7,6 +7,7 @@ import { z } from "zod";
 import { SERVER_API_VERSION } from "@/lib/api-version";
 import fingerprints from "@/lib/api-contract-fingerprints.json";
 import {
+  buildOtherLodgePullEnvelope,
   otherLodgeUploadSchema,
   serializeOtherLodgeForClient,
   type OtherLodgeRecord,
@@ -152,6 +153,15 @@ export function currentContractFingerprint(): string {
     },
     responses: {
       otherLodge: keysOf(serializeOtherLodgeForClient(lodgeFixture)),
+      // The whole pull response, not just a lodge in it: a top-level field such
+      // as `ownLodgeNames` is part of the contract too.
+      otherLodgePull: keysOf(
+        buildOtherLodgePullEnvelope({
+          lodges: [serializeOtherLodgeForClient(lodgeFixture)],
+          cursor: "c",
+          ownLodgeNames: ["n"],
+        }),
+      ),
       post: keysOf(serializePostForClient(postFixture, "https://example.test")),
     },
   };

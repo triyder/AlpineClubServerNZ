@@ -252,3 +252,83 @@ describe("GET /api/v1/other-lodges (pull) with the new fields", () => {
     expect(lodge).not.toHaveProperty("sourceClub");
   });
 });
+
+describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", () => {
+  /** Answers the two queries the route makes: the lodges, and the club's own. */
+  function answer(lodges: unknown[], owned: Array<{ name: string }>) {
+    findMany.mockImplementation(async (args: { where?: { sourceClubId?: string } }) =>
+      args.where?.sourceClubId !== undefined ? owned : lodges,
+    );
+  }
+  const ownedQuery = () =>
+    findMany.mock.calls
+      .map((c) => c[0] as { where?: { sourceClubId?: string } })
+      .find((a) => a.where?.sourceClubId !== undefined);
+
+  it("returns the names of exactly the lodges the authenticated club owns", async () => {
+    answer([dbRow()], [{ name: "Alpha Lodge" }, { name: "Beta Lodge" }]);
+    const res = await GET(req("GET"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ownLodgeNames).toEqual(["Alpha Lodge", "Beta Lodge"]);
+    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1" });
+  });
+
+  it("returns an empty list for a club that owns nothing", async () => {
+    answer([dbRow()], []);
+    const body = await (await GET(req("GET"))).json();
+    expect(body.ownLodgeNames).toEqual([]);
+  });
+
+  it("returns the whole list on an INCREMENTAL pull too (it is not a delta)", async () => {
+    answer([], [{ name: "Alpha Lodge" }]);
+    const res = await GET(
+      new Request("https://s/api/v1/other-lodges?since=2026-02-01T00:00:00.000Z", {
+        method: "GET",
+        headers: { authorization: "Bearer acs_x_y" },
+      }),
+    );
+    const body = await res.json();
+    expect(body.lodges).toEqual([]);
+    expect(body.ownLodgeNames).toEqual(["Alpha Lodge"]);
+    // The owned query is not narrowed by `since`.
+    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1" });
+  });
+
+  it("takes the club from the token, never from the request", async () => {
+    answer([dbRow()], [{ name: "Alpha Lodge" }]);
+    await GET(
+      new Request("https://s/api/v1/other-lodges?clubId=club_other&sourceClubId=club_other", {
+        method: "GET",
+        headers: { authorization: "Bearer acs_x_y" },
+      }),
+    );
+    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1" });
+  });
+
+  it("keeps the envelope's existing fields", async () => {
+    answer([dbRow()], []);
+    const body = await (await GET(req("GET"))).json();
+    expect(Object.keys(body).sort()).toEqual(["count", "cursor", "lodges", "ownLodgeNames"]);
+    expect(body.count).toBe(1);
+  });
+});
+
+describe("POST /api/v1/other-lodges (upload) updates only the club's own lodges", () => {
+  it("skips a lodge owned centrally (no owner), changing nothing", async () => {
+    findUnique.mockResolvedValue(dbRow({ sourceClubId: null }));
+    const res = await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 99 }] }));
+    const body = await res.json();
+    expect(body.skipped).toBe(1);
+    expect(body.results[0]).toMatchObject({ status: "skipped", reason: "owned-centrally" });
+    expect(update).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("updates a lodge the club owns", async () => {
+    findUnique.mockResolvedValue(dbRow({ sourceClubId: "club_1" }));
+    const res = await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 99 }] }));
+    expect((await res.json()).updated).toBe(1);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+});

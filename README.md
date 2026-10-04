@@ -134,6 +134,27 @@ is left unchanged. Pull returns every field and the amenity list. Changing a
 lodge's amenities moves the lodge's `updatedAt`, so the incremental pull sees it.
 Admins edit all of it on `/lodges`.
 
+#### Which lodges a club owns
+
+A lodge has at most one owning club (`OtherLodge.sourceClubId`); no owner means
+it is central. That owner decides whose upload may change the lodge, so there is
+one source of truth. On `/clubs`, each **approved** club has a **Lodges** section:
+the lodges it owns are listed side by side above a multi-select dropdown, and an
+administrator or manager ticks or unticks lodges and saves. One booking site can
+run several lodges, so a club can own several.
+
+- A lodge owned by **another** club is listed greyed out with that club's name; it
+  has to be unticked there first. The server refuses it too, so the choice can
+  never silently take a lodge from another club.
+- Unticking returns a lodge to central ownership; it does not delete it.
+- Saving is all-or-nothing, including when two people save at once.
+- A club can still add a **new** lodge by uploading it; it becomes that club's.
+- Every pull of `GET /api/v1/other-lodges` returns `ownLodgeNames`, by lodge name
+  (the booking site keys its copy by name), so the site can allow editing only
+  those. It is sent on every pull, incremental or not, because it is the club's
+  whole current list and not a delta. A club's upload can only change a lodge it
+  owns; the server enforces that whatever the site does.
+
 #### Image manager and lodge pictures
 
 `/admin/image-manager` is the library of pictures stored on this server (under
@@ -190,7 +211,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/login`     | public        | Email + password sign-in.                                      |
 | `/register`  | public        | Lodge submits a link request.                                  |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
-| `/clubs`     | session       | Approve/reject applications, issue & revoke API keys.          |
+| `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager). |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |
 | `/admin/image-manager` | admin/manager | **Image manager** — upload pictures and logos, rename them, delete the ones no lodge uses. See below. |
 | `/issues`    | admin/manager | **Issues** — conditions that need a person to look at them, starting with clubs whose API version differs from this server's. An issue stays until it is flagged as cleared. |
@@ -211,7 +232,7 @@ signs the user out to re-authenticate with the new credentials.
 | `POST /api/v1/clubs/register`| none (rate-limited) | Request linking. Creates a `PENDING` club. |
 | `POST /api/v1/sync`          | Bearer token | Push/pull sync batch for an approved club. |
 | `POST /api/v1/other-lodges`  | Bearer token (`lodges:write`) | Upload the club's "Other lodges" entries. |
-| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry. |
+| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry, plus `ownLodgeNames`: the lodges this club owns. |
 | `GET  /api/v1/version`       | Bearer token (any approved club) | The server's **API version**, and whether the caller's matches. See below. |
 | `GET  /api/health`           | none        | Liveness + DB connectivity probe.          |
 
@@ -248,8 +269,8 @@ both directions until the club is upgraded.
 - **Comparing versions:** by integer parts, never as a number — `1.10` is not
   `1.1`. Canonical form only (`1.0`, not `01.0` or `1.00`).
 - **History:** `1.0` — the first versioned contract. `1.1` — lodge detail fields
-  and amenities, and every lodge distributed (additive, but any bump pauses
-  clubs until upgraded).
+  and amenities, and every lodge distributed. `1.2` — the pull also returns
+  `ownLodgeNames` (additive, but any bump pauses clubs until upgraded).
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
@@ -321,6 +342,8 @@ Vitest covers the security-critical units and the registration endpoint:
   unapproved / valid);
 - club registration idempotency;
 - `POST /api/v1/clubs/register` (201 / 400 / 200-existing / 429 rate limit);
+- lodge ownership: assigning lodges to a club (all-or-nothing, refusing another
+  club's lodge, the race), the admin route, and the owned list on the pull;
 - the image library: upload processing (profiles, transparency, size limits, EXIF
   strip), the admin API, serving, lodge picture/logo validation, and the proxy
   coverage guard;
