@@ -100,7 +100,9 @@ npm run dev           # http://localhost:3000
 | `Club`     | A linked lodge/club. Lifecycle: `PENDING → APPROVED / REJECTED`.         |
 | `ApiToken` | API keys issued to an approved club. Only the SHA-256 hash is stored.   |
 | `AuditLog` | Records client connections/requests and notable admin actions.          |
-| `OtherLodge` | Central registry of external/partner lodges. `distribute` marks a row for hand-out to connected clubs; `sourceClub` records which club uploaded it. |
+| `OtherLodge` | Central registry of external/partner lodges. `distribute` marks a row for hand-out to connected clubs; `sourceClub` records which club uploaded it. Also holds the lodge details below. |
+| `Amenity`  | A free-form extra a lodge offers (name + optional description). Many to one `OtherLodge`, unique name per lodge, deleted with the lodge. |
+| `SyncIssue` | An open or cleared condition for an administrator (starts with `VERSION_MISMATCH`). |
 
 ### "Other lodges" distribution (in progress)
 
@@ -111,6 +113,25 @@ connected clubs upload their entries, admins mark rows for distribution, and
 marked rows are handed back out to every club connected via its API key. Both
 the admin registry and the client upload/pull endpoints are implemented — see
 **Distribution loop** under the REST API section below.
+
+#### Lodge details and amenities (API version 1.1)
+
+Besides name, location, booking officer and bed capacity, each lodge holds:
+
+| Field | Type | Notes |
+| ----- | ---- | ----- |
+| `siteUrl` | text (500) | Must start with `http://` or `https://`; anything else is rejected, because it is shown as a link. |
+| `bookingPath` | text (300) | Free text. |
+| `requiresLodgeCustodian`, `freeWifi`, `quietRoom`, `dryingRoom`, `sharedKitchen`, `wheelchairAccessible`, `breakfastIncluded`, `lunchIncluded`, `dinnerIncluded` | yes/no | Default **no**; "not known" and "no" are not distinguished. |
+| `cancellationPeriod` | text (200) | Free text. |
+| `winterSeasonStart`, `summerSeasonStart` | date | A calendar date with a year, `YYYY-MM-DD`; never shifted by time zone. |
+| `amenities` | list | `{ name, description? }`, at most 50 per lodge, names unique ignoring case. |
+
+On the API, `amenities` **replaces the lodge's whole set** when present in an
+upload and leaves it alone when absent; every other field left out of an upload
+is left unchanged. Pull returns every field and the amenity list. Changing a
+lodge's amenities moves the lodge's `updatedAt`, so the incremental pull sees it.
+Admins edit all of it on `/lodges`.
 
 Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
 [`prisma/migrations/0000_init`](prisma/migrations/0000_init).
@@ -169,7 +190,7 @@ signs the user out to re-authenticate with the new credentials.
 ### API version
 
 The server has one `major.minor` **API version** (`SERVER_API_VERSION` in
-`src/lib/api-version.ts`, currently `1.0`) covering the whole `/api/v1` contract
+`src/lib/api-version.ts`, currently `1.1`) covering the whole `/api/v1` contract
 — other lodges, the message board, push registration and anything added later.
 A club holds the version it was built for and syncs only while the two are
 **identical**; any difference, a minor-only one included, pauses all transfer in
@@ -198,6 +219,8 @@ both directions until the club is upgraded.
   no attempt consumed) until it matches.
 - **Comparing versions:** by integer parts, never as a number — `1.10` is not
   `1.1`. Canonical form only (`1.0`, not `01.0` or `1.00`).
+- **History:** `1.0` — the first versioned contract. `1.1` — lodge detail fields
+  and amenities (additive, but any bump pauses clubs until upgraded).
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
