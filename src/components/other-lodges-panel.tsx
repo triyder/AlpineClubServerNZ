@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Modal } from "@/components/ui/modal";
 import {
   Table,
   TableBody,
@@ -320,24 +321,27 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
         ) : null}
       </div>
 
-      {error ? (
+      {/* While the dialog is open it covers the page, so the error is shown
+          inside it, next to the Save button, and not up here. */}
+      {error && !showForm ? (
         <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
       ) : null}
 
-      {showForm ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {creating ? "Add other lodge" : "Edit other lodge"}
-            </CardTitle>
-            <CardDescription>
-              Only the name is required. Everything else is optional contact and
-              capacity detail.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <Modal
+        open={showForm}
+        onClose={cancelEdit}
+        dismissible={!saving}
+        title={creating ? "Add other lodge" : "Edit other lodge"}
+        description="Only the name is required. Everything else is optional contact and capacity detail."
+      >
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="ol-name">Name</Label>
@@ -597,9 +601,8 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                 Cancel
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
+        </>
+      </Modal>
 
       <Card>
         <CardHeader>
