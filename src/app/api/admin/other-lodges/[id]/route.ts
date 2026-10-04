@@ -5,11 +5,13 @@ import { requireManager } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import {
+  lodgeDetailColumns,
   normalizeOtherLodgeText,
   otherLodgeSelect,
   otherLodgeUpdateSchema,
   serializeOtherLodge,
 } from "@/lib/other-lodges";
+import { replaceAmenities } from "@/lib/other-lodge-amenities";
 
 /** PATCH /api/admin/other-lodges/:id — update fields / toggle distribution. */
 export async function PATCH(
@@ -65,20 +67,53 @@ export async function PATCH(
     data.bookingOfficerPhone = normalizeOtherLodgeText(parsed.data.bookingOfficerPhone);
   if (parsed.data.bedCapacity !== undefined)
     data.bedCapacity = parsed.data.bedCapacity;
+  Object.assign(data, lodgeDetailColumns(parsed.data));
   if (parsed.data.distribute !== undefined)
     data.distribute = parsed.data.distribute;
 
-  if (Object.keys(data).length === 0) {
+  const amenities = parsed.data.amenities;
+  if (Object.keys(data).length === 0 && amenities === undefined) {
     return NextResponse.json({ otherLodge: serializeOtherLodge(existing) });
   }
 
   let updated;
+  let amenitiesChanged = false;
   try {
-    updated = await prisma.otherLodge.update({
-      where: { id: existing.id },
-      data,
-      select: otherLodgeSelect,
-    });
+    if (amenities === undefined) {
+      updated = await prisma.otherLodge.update({
+        where: { id: existing.id },
+        data,
+        select: otherLodgeSelect,
+      });
+    } else {
+      // The lodge row and its amenities change together or not at all. When
+      // ONLY the amenities changed, the lodge's own `updatedAt` is moved by hand
+      // — the incremental pull is keyed on that column, so leaving it alone
+      // would hide the edit from every club.
+      updated = await prisma.$transaction(async (tx) => {
+        amenitiesChanged = await replaceAmenities(
+          tx,
+          existing.id,
+          amenities,
+          existing.amenities,
+        );
+        const scalar: Prisma.OtherLodgeUpdateInput = { ...data };
+        if (amenitiesChanged && Object.keys(scalar).length === 0) {
+          scalar.updatedAt = new Date();
+        }
+        if (Object.keys(scalar).length === 0) {
+          return tx.otherLodge.findUniqueOrThrow({
+            where: { id: existing.id },
+            select: otherLodgeSelect,
+          });
+        }
+        return tx.otherLodge.update({
+          where: { id: existing.id },
+          data: scalar,
+          select: otherLodgeSelect,
+        });
+      });
+    }
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -98,7 +133,10 @@ export async function PATCH(
     userAgent: req.headers.get("user-agent"),
     metadata: {
       id: updated.id,
-      changedFields: Object.keys(data),
+      changedFields: [
+        ...Object.keys(data),
+        ...(amenitiesChanged ? ["amenities"] : []),
+      ],
       by: session.userId,
     },
   });

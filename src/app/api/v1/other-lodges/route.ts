@@ -6,13 +6,19 @@ import { authenticateApiRequest, clientIp, hasScope } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import {
+  amenitiesDiffer,
+  amenityCreateRows,
+  lodgeDetailColumns,
+  lodgeDetailDiffers,
   normalizeOtherLodgeText,
   otherLodgeOrderBy,
   otherLodgeSelect,
   otherLodgeUploadSchema,
   serializeOtherLodgeForClient,
+  type LodgeDetailColumns,
   type OtherLodgeUploadItem,
 } from "@/lib/other-lodges";
+import { replaceAmenities } from "@/lib/other-lodge-amenities";
 
 function rateLimited(resetAt: number) {
   return NextResponse.json(
@@ -108,7 +114,7 @@ type OtherLodgeMutableFields = {
   bookingOfficerEmail?: string | null;
   bookingOfficerPhone?: string | null;
   bedCapacity?: number | null;
-};
+} & LodgeDetailColumns;
 
 // Build the create/update column data from a validated upload item. Blank text
 // folds to null; `distribute` and `sourceClub` are never set from client input.
@@ -123,6 +129,7 @@ function itemData(item: OtherLodgeUploadItem): OtherLodgeMutableFields {
   if (item.bookingOfficerPhone !== undefined)
     data.bookingOfficerPhone = normalizeOtherLodgeText(item.bookingOfficerPhone);
   if (item.bedCapacity !== undefined) data.bedCapacity = item.bedCapacity ?? null;
+  Object.assign(data, lodgeDetailColumns(item));
   return data;
 }
 
@@ -134,9 +141,9 @@ function itemDiffers(
   data: OtherLodgeMutableFields,
   existing: OtherLodgeMutableFields,
 ): boolean {
-  return (Object.keys(data) as (keyof OtherLodgeMutableFields)[]).some(
-    (key) => data[key] !== existing[key],
-  );
+  // Shared with the detail fields: it compares dates by calendar day, which a
+  // plain `!==` on two Date objects would not (every pair would look changed).
+  return lodgeDetailDiffers(data, existing);
 }
 
 /**
@@ -197,15 +204,7 @@ export async function POST(req: Request) {
     const name = item.name.trim();
     const existing = await prisma.otherLodge.findUnique({
       where: { name },
-      select: {
-        id: true,
-        sourceClubId: true,
-        location: true,
-        bookingOfficerName: true,
-        bookingOfficerEmail: true,
-        bookingOfficerPhone: true,
-        bedCapacity: true,
-      },
+      select: otherLodgeSelect,
     });
 
     const now = new Date();
@@ -215,6 +214,9 @@ export async function POST(req: Request) {
           data: {
             name,
             ...itemData(item),
+            ...(item.amenities
+              ? { amenities: { create: amenityCreateRows(item.amenities) } }
+              : {}),
             sourceClubId: club.id,
             lastUpdatedByClubId: club.id,
             lastUploadedAt: now,
@@ -239,15 +241,30 @@ export async function POST(req: Request) {
       const data = itemData(item);
       // Only write (and bump `updatedAt`) when a column actually changed, so an
       // unchanged re-upload does not churn the row or the distribution cursor.
-      if (itemDiffers(data, existing)) {
-        await prisma.otherLodge.update({
-          where: { id: existing.id },
-          data: {
-            ...data,
-            lastUpdatedByClubId: club.id,
-            lastUploadedAt: now,
-          },
-        });
+      const amenitiesChanged =
+        item.amenities !== undefined &&
+        amenitiesDiffer(existing.amenities, item.amenities);
+      if (itemDiffers(data, existing) || amenitiesChanged) {
+        const write = {
+          ...data,
+          lastUpdatedByClubId: club.id,
+          lastUploadedAt: now,
+          // Moved explicitly: when only the amenities changed no column above
+          // does it, and the incremental pull is keyed on this column.
+          updatedAt: now,
+        };
+        if (amenitiesChanged && item.amenities) {
+          const amenities = item.amenities;
+          await prisma.$transaction(async (tx) => {
+            await replaceAmenities(tx, existing.id, amenities, existing.amenities);
+            await tx.otherLodge.update({ where: { id: existing.id }, data: write });
+          });
+        } else {
+          await prisma.otherLodge.update({
+            where: { id: existing.id },
+            data: write,
+          });
+        }
         updated++;
         results.push({ name, status: "updated" });
       } else {

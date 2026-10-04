@@ -5,6 +5,8 @@ import { requireManager } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import {
+  amenityCreateRows,
+  lodgeDetailColumns,
   normalizeOtherLodgeText,
   otherLodgeCreateSchema,
   otherLodgeOrderBy,
@@ -64,6 +66,12 @@ export async function POST(req: Request) {
         bookingOfficerEmail: normalizeOtherLodgeText(parsed.data.bookingOfficerEmail),
         bookingOfficerPhone: normalizeOtherLodgeText(parsed.data.bookingOfficerPhone),
         bedCapacity: parsed.data.bedCapacity ?? null,
+        ...lodgeDetailColumns(parsed.data),
+        // Created in the same write as the lodge, so the lodge never exists
+        // half-described.
+        ...(parsed.data.amenities
+          ? { amenities: { create: amenityCreateRows(parsed.data.amenities) } }
+          : {}),
         distribute: parsed.data.distribute ?? false,
       },
       select: otherLodgeSelect,
