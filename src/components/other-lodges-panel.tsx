@@ -21,6 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ImagePicker } from "@/components/image-picker";
+import type { LodgeImageRef } from "@/lib/image-library";
 import type { SerializedOtherLodge } from "@/lib/other-lodges";
 
 type BooleanFieldKey =
@@ -64,6 +66,8 @@ type FormState = {
   summerSeasonStart: string;
   flags: Record<BooleanFieldKey, boolean>;
   amenities: AmenityRow[];
+  image: LodgeImageRef | null;
+  logo: LodgeImageRef | null;
 };
 
 const emptyFlags: Record<BooleanFieldKey, boolean> = {
@@ -92,6 +96,8 @@ const emptyForm: FormState = {
   summerSeasonStart: "",
   flags: emptyFlags,
   amenities: [],
+  image: null,
+  logo: null,
 };
 
 function formFromLodge(lodge: SerializedOtherLodge): FormState {
@@ -114,6 +120,8 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
       name: a.name,
       description: a.description ?? "",
     })),
+    image: lodge.image,
+    logo: lodge.logo,
   };
 }
 
@@ -141,6 +149,10 @@ function formPayload(form: FormState) {
         name: a.name.trim(),
         description: a.description.trim() || null,
       })),
+    // Always sent, so clearing a picture (null) is a real change and not an
+    // omission the server would read as "leave it alone".
+    imageId: form.image?.id ?? null,
+    logoId: form.logo?.id ?? null,
   };
 }
 
@@ -461,6 +473,23 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
               </div>
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ImagePicker
+                kind="IMAGE"
+                label="Lodge image"
+                value={form.image}
+                disabled={saving}
+                onChange={(image) => setForm((p) => ({ ...p, image }))}
+              />
+              <ImagePicker
+                kind="LOGO"
+                label="Lodge logo"
+                value={form.logo}
+                disabled={saving}
+                onChange={(logo) => setForm((p) => ({ ...p, logo }))}
+              />
+            </div>
+
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Facilities</legend>
               <div className="grid gap-2 sm:grid-cols-3">
@@ -607,7 +636,26 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                   {lodges.map((lodge) => (
                     <TableRow key={lodge.id}>
                       <TableCell>
-                        <span className="font-medium">{lodge.name}</span>
+                        <div className="flex items-center gap-2">
+                          {lodge.logo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={lodge.logo.url}
+                              alt={`${lodge.name} logo`}
+                              className="h-8 w-8 object-contain"
+                            />
+                          ) : null}
+                          <span className="font-medium">{lodge.name}</span>
+                        </div>
+                        {lodge.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={lodge.image.url}
+                            alt={`${lodge.name}`}
+                            loading="lazy"
+                            className="mt-2 h-16 w-28 rounded object-cover"
+                          />
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {lodge.location ?? "—"}
