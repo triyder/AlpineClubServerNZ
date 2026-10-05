@@ -93,6 +93,7 @@ export default async function IssuesPage({
               <div className="flex gap-1 text-xs">
                 <Link
                   href="/issues"
+                  aria-current={showCleared ? undefined : "page"}
                   className={`rounded border border-border px-2 py-1 hover:bg-accent ${
                     showCleared ? "" : "bg-accent"
                   }`}
@@ -101,6 +102,7 @@ export default async function IssuesPage({
                 </Link>
                 <Link
                   href="/issues?status=cleared"
+                  aria-current={showCleared ? "page" : undefined}
                   className={`rounded border border-border px-2 py-1 hover:bg-accent ${
                     showCleared ? "bg-accent" : ""
                   }`}

@@ -13,12 +13,13 @@ export function ConsoleShell({
   return (
     <div className="min-h-screen">
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-6 py-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <Link href="/dashboard" className="font-semibold">
               AlpineClubServerNZ
             </Link>
-            <nav className="flex items-center gap-4 text-sm text-muted-foreground">
+            {/* Wraps on a narrow screen rather than overflowing the header. */}
+            <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
               <Link href="/dashboard" className="hover:text-foreground">
                 Dashboard
               </Link>
@@ -28,12 +29,19 @@ export function ConsoleShell({
               <Link href="/lodges" className="hover:text-foreground">
                 Lodges
               </Link>
-              <Link href="/admin/image-manager" className="hover:text-foreground">
-                Images
-              </Link>
-              <Link href="/issues" className="hover:text-foreground">
-                Issues
-              </Link>
+              {/* Images and Issues are admin/manager screens; a plain USER
+                  would only be redirected by each page's own guard, which is
+                  still what enforces it. */}
+              {session.role !== "USER" && (
+                <>
+                  <Link href="/admin/image-manager" className="hover:text-foreground">
+                    Images
+                  </Link>
+                  <Link href="/issues" className="hover:text-foreground">
+                    Issues
+                  </Link>
+                </>
+              )}
               <Link href="/audit" className="hover:text-foreground">
                 Audit
               </Link>

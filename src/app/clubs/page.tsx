@@ -134,7 +134,9 @@ export default async function ClubsPage() {
                   {club.status === "APPROVED" ? (
                     <ClubLodgesSelect
                       // Re-keyed on the saved list so a save (which refreshes this
-                      // page) resets the unsaved-changes state.
+                      // page) remounts the component: that resets its
+                      // unsaved-changes state, and the refreshed chips are the
+                      // confirmation — it shows no "Saved" message of its own.
                       key={`${club.id}:${lodgeOptions
                         .filter((l) => l.ownerClubId === club.id)
                         .map((l) => l.id)

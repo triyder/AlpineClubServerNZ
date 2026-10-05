@@ -265,6 +265,7 @@ export function ImageManagerClient() {
               multiple
               accept={ACCEPT}
               disabled={uploading}
+              aria-label="Pictures to upload"
               className="sr-only"
               onChange={(e) => {
                 if (e.target.files) void uploadFiles(e.target.files);
@@ -319,6 +320,7 @@ export function ImageManagerClient() {
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={filter === value}
                   onClick={() => setFilter(value)}
                   className={cn(
                     "rounded border border-border px-2 py-1 hover:bg-accent",
