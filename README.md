@@ -53,8 +53,10 @@ Two operational notes:
   destroyed on the next `docker compose up --build`. `UPLOADS_DIR` must point at
   the mount.
 - **Uploads and rate limiting are per-container.** Image storage is local disk
-  and the rate limiter is in-process, so running a second `app` replica would
-  break both. Scaling out needs shared storage and a shared limiter first.
+  and the rate limiter is in-process (one fixed window per Node process, so
+  the deployment assumes a single `app` instance), and running a second
+  replica would break both. Scaling out needs shared storage and a shared
+  limiter first.
 
 Retention deletes content across the network only insofar as each club's install
 applies the removals it is sent; a club running a modified or long-stale install
@@ -115,14 +117,30 @@ there is no per-row "distribute" switch (it was removed before API version 2.0, 
 each club's nightly sync is what carries the registry out). See
 **Distribution loop** under the REST API section below.
 
+Operator note for an installation that predates that change: migration
+`0009_remove_distribute_flag` drops the `distribute` column and moves
+`updated_at` on the lodges that were never distributed so the incremental pull
+announces them. After upgrading, make each club's **first** sync the full pass —
+upload, then download — rather than an incremental one.
+
+A lodge **deleted** on this server does not yet reach the clubs: the pull
+carries no tombstones, so a club keeps its copy until that is added (a
+follow-up issue; it will be an API version change).
+
 #### Lodge details and amenities (API version 2.0)
 
 Besides name, location, booking officer and bed capacity, each lodge holds:
 
 | Field | Type | Notes |
 | ----- | ---- | ----- |
-| `siteUrl` | text (500) | Must start with `http://` or `https://`; anything else is rejected, because it is shown as a link. |
+| `siteUrl` | text (500) | Must start with `http://` or `https://` (any case), carry no whitespace, control character or backslash, and name no username or password — it is shown as a link, and the URL parser alone would read `http:\\evil.com` or `https://club.nz@evil.com` as something else. Stored as typed. |
 | `bookingPath` | text (300) | Free text. |
+
+Every text field here, the lodge name, the booking officer's name, email and
+phone, and an amenity's name and description refuse control characters
+(including tab and newline: none is multi-line), so a bad value is a `400`
+before anything is written rather than a database error part-way through an
+upload.
 | `requiresLodgeCustodian`, `freeWifi`, `quietRoom`, `dryingRoom`, `sharedKitchen`, `wheelchairAccessible`, `breakfastIncluded`, `lunchIncluded`, `dinnerIncluded` | yes/no | Default **no**; "not known" and "no" are not distinguished. |
 | `cancellationPeriod` | text (200) | Free text. |
 | `winterSeasonStart`, `summerSeasonStart` | date | A calendar date with a year, `YYYY-MM-DD`; never shifted by time zone. |
@@ -161,7 +179,7 @@ run several lodges, so a club can own several.
 `UPLOADS_DIR`, the same volume as post images). Administrators and managers can:
 
 - **Upload** one or more pictures, choosing whether they are **lodge images** or
-  **logos**. At most 10 files and 9 MB in total per upload (the proxy caps the
+  **logos**. At most 10 files and 9 MB in total per upload (Caddy caps the
   body at 10 MB). Every file is checked by its leading bytes (not its declared
   type), decoded within a pixel ceiling, resized, stripped of its metadata
   (including GPS location) and stored as WebP; the original is never kept. Lodge
@@ -190,7 +208,10 @@ Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
 
 - **Console auth** — email + password (bcrypt, cost 12). Sessions are signed
   JWTs (HS256, `jose`) stored in an `httpOnly`, `SameSite=Lax` cookie. The
-  Edge proxy ([`src/proxy.ts`](src/proxy.ts)) gates `/dashboard` and `/clubs`.
+  Edge proxy ([`src/proxy.ts`](src/proxy.ts)) gates every console prefix:
+  `/dashboard`, `/clubs`, `/lodges`, `/issues`, `/admin`, `/audit`,
+  `/profile`, `/posts` and `/settings` (a test fails if a page is added
+  outside that list).
 - **API auth** — clients present `Authorization: Bearer <token>` (or
   `X-API-Key`). Tokens are `acs_<prefix>_<secret>`; the server looks up the row
   by the non-secret prefix and verifies the secret against the stored SHA-256
@@ -247,14 +268,19 @@ both directions until the club is upgraded.
 
 - **Check:** `GET /api/v1/version` with the club's Bearer token and its own
   version in `X-Client-Api-Version` (or `?clientVersion=`). It always answers
-  `200 { "version": "1.0", "match": true | false | null }` — `match` is `null`
+  `200 { "version": "2.0", "match": true | false | null }` — `match` is `null`
   when the caller declared no version. A club with no API key makes no call.
 - **Every check is audited** on `/audit` as `api.version.check`, with both
   versions and `match`. A mismatch also writes `api.version.mismatch` with
-  outcome `FAILURE`.
+  outcome `FAILURE`; a malformed declared version writes `api.version.invalid`
+  (outcome `FAILURE`, with the declared value control-stripped and capped).
+  What a refused request may write — the club's reported-version stamp, the
+  issue and the audit row — is bounded at 10 recordings a minute per token;
+  over that the request is still refused and only the recording is skipped.
 - **Issues screen:** a mismatch opens (or refreshes) one `VERSION_MISMATCH`
-  issue per club on `/issues`, showing the club, the lodges it has uploaded,
-  both versions, first/last seen and a count. It stays until an admin or manager
+  issue per club on `/issues`, showing the club, the lodges it **owns** (an
+  administrator can assign one on `/clubs` without any upload), both
+  versions, first/last seen and a count. It stays until an admin or manager
   flags it **cleared**, even if the club has since caught up (the row then says
   "ready to clear"). A cleared club that mismatches again opens a fresh issue.
 - **Enforcement:** every other data route (`sync`, `other-lodges`, `feed`,
@@ -265,7 +291,10 @@ both directions until the club is upgraded.
   version is not refused — software older than this check cannot send one — so
   such a club appears here only once it is upgraded and checking. Shared-post
   pushes to a club whose last reported version differs are **held** (not failed,
-  no attempt consumed) until it matches.
+  no attempt consumed) until it matches. A held delivery is looked at again
+  an hour later, and the club's version is re-stamped by its next request or
+  by `GET /api/v1/version`, so after an upgrade a held push can wait up to an
+  hour past the club's first call.
 - **Comparing versions:** by integer parts, never as a number — `1.10` is not
   `1.1`. Canonical form only (`1.0`, not `01.0` or `1.00`).
 - **History:** `2.0` is the first RELEASED contract. It includes everything built
@@ -275,13 +304,20 @@ both directions until the club is upgraded.
   number). No club ever held `1.x`; their fingerprints stay in
   `api-contract-fingerprints.json` as a record, and `2.0` carries the same
   fingerprint as `1.2` because the contract itself did not change when the
-  number was raised to mark the release.
+  number was raised to mark the release. An entry in that file is never
+  rewritten once released: it is the record of what that version meant.
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
-  (`src/lib/__tests__/api-contract.test.ts`) fingerprints the v1 surface and
-  fails when it changes without a new entry for the new version in
-  `src/lib/api-contract-fingerprints.json`; never overwrite an existing entry.
+  (`src/lib/__tests__/api-contract.test.ts`) fingerprints exactly: the v1
+  routes and their methods, the JSON Schema of each request schema (a
+  `.refine` validation rule is invisible to it), and the key shapes built by
+  the shared serialisers (a distributed lodge, the pull envelope, a client
+  post). It fails when any of that changes without a new entry for the new
+  version in `src/lib/api-contract-fingerprints.json`; never overwrite an
+  existing entry. The bodies the routes build inline (`/feed`, `/feed/sync`,
+  `/version`, `/push-target`) and the sync entry wrapper are pinned
+  separately in `src/app/api/v1/__tests__/contract-response-bodies.test.ts`.
 
 ### Booking officer phone numbers are not distributed
 
@@ -300,12 +336,27 @@ without a version change).
    `{ "lodges": [ { "name": "...", "location": "...", "bedCapacity": 20 } ] }`.
    Each entry is keyed by unique `name` and **owned** by the uploading club —
    new names are created, the club's own entries are updated, and names owned
-   centrally or by another club are **skipped** (no clobber).
+   centrally or by another club are **skipped** (no clobber). Each result
+   carries a `status` and, when skipped, a `reason`:
+   `owned-centrally`, `owned-by-other-club`, `conflict` (the same name was
+   created by a concurrent upload) or `similar-name` — the new name differs
+   from an existing lodge's only by case, spacing, invisible characters or
+   full-width letters, so it would be a convincing duplicate distributed to
+   every club. The unique index is exact, so this check is made by the
+   application and a lookalike created in the same instant can slip past it.
+   The whole payload is validated before anything is written; a bad item
+   makes the whole upload a `400`.
 2. A **central admin** can add and edit entries at `/lodges`; nothing needs to
-   be ticked for an entry to be shared.
+   be ticked for an entry to be shared. The same lookalike-name rule applies
+   there (a `409` naming the existing lodge).
 3. Every connected club **pulls** the registry: `GET /api/v1/other-lodges`
    returns every entry. Pass `?since=<ISO>` for an incremental pull; use the
-   response `cursor` as the next `since`.
+   response `cursor` as the next `since`. The cursor is the newest `updatedAt`
+   the pull saw, and a row whose transaction committed just after the query
+   ran can carry an `updatedAt` before it; the booking site therefore asks
+   from 60 seconds before its stored cursor on every incremental pull, and its
+   per-row "unchanged" skip makes the re-sent rows harmless. That overlap is
+   what makes the incremental pull safe against a late commit.
 
 Admin-only:
 

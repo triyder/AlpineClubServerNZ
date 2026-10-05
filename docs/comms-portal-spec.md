@@ -10,7 +10,8 @@ wrote them unless a member ticks *share with all clubs* — then, and only then,
 they travel through AlpineClubServerNZ to every connected club.
 
 Two repositories are involved. AlpineClubBookingsNZ owns the feature; ServerNZ is
-a distribution hub for the subset that is deliberately shared.
+a distribution hub for the posts a member deliberately shared (unlike the lodge
+registry, where every entry is distributed).
 
 ---
 
@@ -405,9 +406,10 @@ so runtime writes there are destroyed on every rebuild, and Next only serves
 assets present in `public/` at build time.
 
 ```ts
-// Caddy caps the whole request body at 10MB (Caddyfile:27) and that cap
-// stays. Budget 9MB for image bytes, leaving ~1MB for multipart boundaries
-// and the text fields.
+// Caddy caps the whole request body at 10MB (`request_body max_size` in the
+// Caddyfile) and that cap stays. Budget 9MB for image bytes, leaving ~1MB for
+// multipart boundaries and the text fields. (As built, MAX_IMAGE_BYTES_TOTAL
+// lives in `src/lib/image-library.ts` so the browser can mirror it.)
 export const MAX_IMAGES = 4
 export const MAX_IMAGE_BYTES_TOTAL = 9 * 1024 * 1024
 
@@ -1039,8 +1041,8 @@ export async function reportCommsPost(
 
 Reuse `resolveConnection()`, `readError()` and `REQUEST_TIMEOUT_MS` unchanged.
 Hold the remote to the same bounds a local officer is held to —
-`distributedLodgeSchema` in that file explains why, and the reasoning carries
-over: `content` capped at 4000, `authorName` at 200, rows breaking the bounds
+`distributedLodgeSchema` in AlpineClubBookingsNZ's `src/lib/servernz-api.ts`
+(the file above) explains why, and the reasoning carries over: `content` capped at 4000, `authorName` at 200, rows breaking the bounds
 dropped rather than aborting the batch.
 
 One addition the lodges code does not need: **log the dropped count**. With a
