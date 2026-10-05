@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import {
+  NO_CONTROL_CHARS_MESSAGE,
+  noControlChars,
+  stripControlChars,
+} from "@/lib/control-chars";
 
 /**
  * Helpers for the image library (`/admin/image-manager`): pictures an
@@ -8,8 +13,6 @@ import type { Prisma } from "@prisma/client";
  */
 
 export type ImageKindValue = "IMAGE" | "LOGO";
-
-export const IMAGE_KINDS: readonly ImageKindValue[] = ["IMAGE", "LOGO"];
 
 export function isImageKind(value: unknown): value is ImageKindValue {
   return value === "IMAGE" || value === "LOGO";
@@ -92,18 +95,40 @@ export function serializeImage(image: ImageRecord): SerializedImage {
 export const IMAGE_NAME_MAX = 200;
 
 /**
+ * Most files one library upload request may carry, and the COMBINED byte
+ * budget of any image upload (library or post). Both are mirrored by the
+ * browser so a bad batch is explained before it is sent, which is why they
+ * live here rather than in the server-only upload module.
+ *
+ * Caddy caps the whole request body at 10 MB (`request_body max_size` in the
+ * Caddyfile) and that cap stays, so the byte budget is sized to fit underneath
+ * it with room for multipart boundaries and the text fields. A body over the
+ * Caddy limit is rejected at the edge as a bare 413 with no JSON body, so a
+ * client that did not check first has nothing to explain with.
+ */
+export const LIBRARY_MAX_FILES = 10;
+export const MAX_IMAGE_BYTES_TOTAL = 9 * 1024 * 1024;
+
+/**
  * A display name from an uploaded file name: directory parts and the extension
- * dropped, whitespace collapsed, bounded. The file name is caller-supplied text
- * that ends up on a page, so it is only ever kept as a label and never used as
- * a path.
+ * dropped, control characters removed, whitespace collapsed, bounded. The file
+ * name is caller-supplied text that ends up on a page, so it is only ever kept
+ * as a label and never used as a path.
  */
 export function imageNameFromFilename(filename: string): string {
-  const base = filename.split(/[\\/]/).pop() ?? "";
+  const base = stripControlChars(filename).split(/[\\/]/).pop() ?? "";
   const withoutExtension = base.replace(/\.[A-Za-z0-9]{1,5}$/, "");
   const cleaned = withoutExtension.replace(/\s+/g, " ").trim();
   return (cleaned || "Untitled").slice(0, IMAGE_NAME_MAX);
 }
 
 export const imageRenameSchema = z
-  .object({ name: z.string().trim().min(1).max(IMAGE_NAME_MAX) })
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(IMAGE_NAME_MAX)
+      .refine(noControlChars, NO_CONTROL_CHARS_MESSAGE),
+  })
   .strict();

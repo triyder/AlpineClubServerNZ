@@ -5,14 +5,21 @@ import { requireManager } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import {
+  amenitiesDiffer,
+  findSimilarLodgeName,
   lodgeDetailColumns,
   normalizeOtherLodgeText,
   otherLodgeSelect,
   otherLodgeUpdateSchema,
   serializeOtherLodge,
+  similarLodgeNameMessage,
 } from "@/lib/other-lodges";
 import { replaceAmenities } from "@/lib/other-lodge-amenities";
-import { validateLodgePictures } from "@/lib/lodge-pictures";
+import {
+  chosenPictureLabel,
+  missingPictureMessage,
+  validateLodgePictures,
+} from "@/lib/lodge-pictures";
 
 /** PATCH /api/admin/other-lodges/:id — update fields. */
 export async function PATCH(
@@ -57,7 +64,26 @@ export async function PATCH(
   // Only assign the fields that were actually provided so a partial PATCH (e.g.
   // just the bed count) never clears the other columns.
   const data: Prisma.OtherLodgeUpdateInput = {};
-  if (parsed.data.name !== undefined) data.name = parsed.data.name.trim();
+  if (parsed.data.name !== undefined) {
+    const name = parsed.data.name.trim();
+    if (name !== existing.name) {
+      // A rename to a name that only LOOKS like another lodge's (see
+      // normalizeLodgeNameKey). App-level and race-prone by design; the unique
+      // index still holds the exact name.
+      const others = await prisma.otherLodge.findMany({
+        where: { id: { not: existing.id } },
+        select: { name: true },
+      });
+      const similar = findSimilarLodgeName(name, others.map((l) => l.name));
+      if (similar) {
+        return NextResponse.json(
+          { error: similarLodgeNameMessage(similar) },
+          { status: 409 },
+        );
+      }
+    }
+    data.name = name;
+  }
   if (parsed.data.location !== undefined)
     data.location = normalizeOtherLodgeText(parsed.data.location);
   if (parsed.data.bookingOfficerName !== undefined)
@@ -90,57 +116,55 @@ export async function PATCH(
   }
 
   const amenities = parsed.data.amenities;
-  if (Object.keys(data).length === 0 && amenities === undefined) {
+  const amenitiesChanged =
+    amenities !== undefined && amenitiesDiffer(existing.amenities, amenities);
+  if (Object.keys(data).length === 0 && !amenitiesChanged) {
     return NextResponse.json({ otherLodge: serializeOtherLodge(existing) });
   }
 
   let updated;
-  let amenitiesChanged = false;
   try {
-    if (amenities === undefined) {
+    if (amenities === undefined || !amenitiesChanged) {
       updated = await prisma.otherLodge.update({
         where: { id: existing.id },
         data,
         select: otherLodgeSelect,
       });
     } else {
-      // The lodge row and its amenities change together or not at all. When
-      // ONLY the amenities changed, the lodge's own `updatedAt` is moved by hand
-      // — the incremental pull is keyed on that column, so leaving it alone
-      // would hide the edit from every club.
+      // The lodge row and its amenities change together or not at all, and the
+      // ROW IS WRITTEN FIRST: that takes its lock for the rest of the
+      // transaction, so an overlapping writer's amenity replacement waits
+      // behind this one instead of interleaving into a union of both sets
+      // (see replaceAmenities). When ONLY the amenities changed, the lodge's
+      // own `updatedAt` is moved by hand — the incremental pull is keyed on
+      // that column, so leaving it alone would hide the edit from every club.
       updated = await prisma.$transaction(async (tx) => {
-        amenitiesChanged = await replaceAmenities(
-          tx,
-          existing.id,
-          amenities,
-          existing.amenities,
-        );
         const scalar: Prisma.OtherLodgeUpdateInput = { ...data };
-        if (amenitiesChanged && Object.keys(scalar).length === 0) {
-          scalar.updatedAt = new Date();
-        }
-        if (Object.keys(scalar).length === 0) {
-          return tx.otherLodge.findUniqueOrThrow({
-            where: { id: existing.id },
-            select: otherLodgeSelect,
-          });
-        }
-        return tx.otherLodge.update({
+        if (Object.keys(scalar).length === 0) scalar.updatedAt = new Date();
+        await tx.otherLodge.update({ where: { id: existing.id }, data: scalar });
+        await replaceAmenities(tx, existing.id, amenities, existing.amenities);
+        return tx.otherLodge.findUniqueOrThrow({
           where: { id: existing.id },
-          data: scalar,
           select: otherLodgeSelect,
         });
       });
     }
   } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return NextResponse.json(
-        { error: "A lodge with that name already exists." },
-        { status: 409 },
-      );
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
+        return NextResponse.json(
+          { error: "A lodge with that name already exists." },
+          { status: 409 },
+        );
+      }
+      // A chosen picture deleted between the check above and this write.
+      const picture = error.code === "P2025" ? chosenPictureLabel(parsed.data) : null;
+      if (picture) {
+        return NextResponse.json(
+          { error: missingPictureMessage(picture) },
+          { status: 400 },
+        );
+      }
     }
     throw error;
   }

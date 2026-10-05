@@ -36,6 +36,11 @@ describe("imageNameFromFilename", () => {
     const name = imageNameFromFilename(`${"x".repeat(500)}.jpg`);
     expect(name).toHaveLength(IMAGE_NAME_MAX);
   });
+
+  it("strips control characters, which Postgres would otherwise refuse", () => {
+    expect(imageNameFromFilename("hut\u0000 photo\u001b[31m.jpg")).toBe("hut photo[31m");
+    expect(imageNameFromFilename("\u0000\u0001.png")).toBe("Untitled");
+  });
 });
 
 describe("imageRenameSchema", () => {
@@ -49,6 +54,12 @@ describe("imageRenameSchema", () => {
     expect(imageRenameSchema.safeParse({ name: "x".repeat(IMAGE_NAME_MAX + 1) }).success).toBe(false);
     expect(imageRenameSchema.safeParse({ name: "a", kind: "LOGO" }).success).toBe(false);
     expect(imageRenameSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects a control character in the name", () => {
+    for (const bad of ["a\u0000b", "a\tb", "a\nb", "a\u007fb"]) {
+      expect(imageRenameSchema.safeParse({ name: bad }).success, JSON.stringify(bad)).toBe(false);
+    }
   });
 });
 

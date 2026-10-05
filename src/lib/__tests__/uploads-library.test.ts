@@ -14,11 +14,11 @@ const {
   ImageRejectedError,
   LIBRARY_IMAGE_PROFILE,
   LIBRARY_LOGO_PROFILE,
-  LIBRARY_MAX_FILES,
   POST_IMAGE_PROFILE,
   resolveStorageKey,
   writeProcessedImage,
 } = await import("@/lib/uploads");
+const { LIBRARY_MAX_FILES } = await import("@/lib/image-library");
 
 // sharp memory-maps files it reads, which on Windows keeps them locked and makes
 // the temp-folder cleanup below fail with EBUSY. Turning its cache off releases

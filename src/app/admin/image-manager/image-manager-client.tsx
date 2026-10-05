@@ -15,11 +15,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
-import type { ImageKindValue, SerializedImage } from "@/lib/image-library";
+import {
+  IMAGE_NAME_MAX,
+  LIBRARY_MAX_FILES as MAX_FILES,
+  MAX_IMAGE_BYTES_TOTAL as MAX_TOTAL_BYTES,
+  type ImageKindValue,
+  type SerializedImage,
+} from "@/lib/image-library";
 
-/** Mirrors the server limits so a bad batch is explained before it is sent. */
-const MAX_FILES = 10;
-const MAX_TOTAL_BYTES = 9 * 1024 * 1024;
+// The batch limits are the server's own, so a bad batch is explained before
+// it is sent and the two cannot drift apart.
 const ACCEPT = "image/jpeg,image/png,image/webp";
 
 type Filter = "ALL" | ImageKindValue;
@@ -421,7 +426,7 @@ export function ImageManagerClient() {
           <Input
             id="image-name"
             value={renameValue}
-            maxLength={200}
+            maxLength={IMAGE_NAME_MAX}
             autoFocus
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {

@@ -13,12 +13,12 @@ const {
   assertBatchWithinLimits,
   deleteStoredImage,
   ImageRejectedError,
-  MAX_IMAGE_BYTES_TOTAL,
   resolveStorageKey,
   sniffImageType,
   uploadsRoot,
   writeProcessedImage,
 } = await import("@/lib/uploads");
+const { MAX_IMAGE_BYTES_TOTAL } = await import("@/lib/image-library");
 
 /** A real JPEG carrying EXIF, including a GPS tag. */
 async function jpegWithGps(width = 40, height = 30): Promise<Buffer> {

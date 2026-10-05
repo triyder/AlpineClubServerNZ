@@ -11,9 +11,18 @@ import {
  * validated). Runs inside the caller's transaction so the lodge row and its
  * amenities change together or not at all.
  *
- * Returns whether anything changed. The CALLER must then move the lodge's own
- * `updatedAt`: the incremental pull is keyed on the lodge row, so an amenity
- * edit that left it untouched would never be pulled by any club.
+ * ORDER IS THE CALLER'S JOB: update the lodge row FIRST, in the same
+ * transaction, and only then call this. The row update takes the row lock for
+ * the rest of the transaction, so a second writer's replacement waits behind
+ * the first's commit and then sees — and deletes — what it wrote. Done the
+ * other way round, two overlapping writers interleave their deletes and
+ * upserts and the lodge ends up with the UNION of both sets. The row update is
+ * also what moves the lodge's `updatedAt`: the incremental pull is keyed on
+ * the lodge row, so an amenity edit that left it untouched would never be
+ * pulled by any club.
+ *
+ * Returns whether anything changed, judged against `existing` as the caller
+ * read it before the transaction.
  */
 export async function replaceAmenities(
   tx: Prisma.TransactionClient,

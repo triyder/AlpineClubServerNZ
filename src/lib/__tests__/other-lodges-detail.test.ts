@@ -1,11 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
   AMENITIES_PER_LODGE_MAX,
+  AMENITY_DESCRIPTION_MAX,
+  AMENITY_NAME_MAX,
   amenitiesDiffer,
   amenitiesInputSchema,
+  findSimilarLodgeName,
   formatLodgeDate,
+  isSafeHttpUrl,
   lodgeDetailColumns,
   lodgeDetailDiffers,
+  normalizeLodgeNameKey,
   otherLodgeCreateSchema,
   otherLodgeUpdateSchema,
   otherLodgeUploadItemSchema,
@@ -72,8 +77,93 @@ describe("detail field validation (create, update and upload accept the same val
       it("still rejects an unknown key", () => {
         expect(ok(schema, { ...base, hotTub: true })).toBe(false);
       });
+
+      it("refuses a control character in any single-line text field", () => {
+        const fields = [
+          "name",
+          "location",
+          "bookingOfficerName",
+          "bookingOfficerPhone",
+          "bookingPath",
+          "cancellationPeriod",
+        ];
+        for (const field of fields) {
+          for (const bad of ["a\u0000b", "a\u001bb", "a\u007fb", "a\tb", "a\nb", "a\rb"]) {
+            expect(ok(schema, { ...base, [field]: bad }), `${field} ${JSON.stringify(bad)}`).toBe(false);
+          }
+          expect(ok(schema, { ...base, [field]: "plain text, ünïcödé ok" }), field).toBe(true);
+        }
+        expect(ok(schema, { ...base, bookingOfficerEmail: "a\u0000b@x.nz" })).toBe(false);
+        expect(ok(schema, { ...base, siteUrl: "https://x.nz/\u0000" })).toBe(false);
+        expect(ok(schema, { ...base, amenities: [{ name: "a\u0000" }] })).toBe(false);
+        expect(ok(schema, { ...base, amenities: [{ name: "a", description: "b\u0007" }] })).toBe(false);
+      });
+
+      it("refuses website addresses the URL parser would quietly repair or misread", () => {
+        for (const bad of [
+          "http:\\\\evil.com",
+          "https:/\t/evil.com",
+          "https://lodge.example/\npath",
+          "https://club.nz@evil.com",
+          "https://user:pw@evil.com/",
+          "https://lodge.example/a b",
+          "HTTPS:evil.com",
+        ]) {
+          expect(ok(schema, { ...base, siteUrl: bad }), JSON.stringify(bad)).toBe(false);
+        }
+        expect(ok(schema, { ...base, siteUrl: "HTTPS://Lodge.Example/Book?x=1#top" })).toBe(true);
+      });
     });
   }
+});
+
+describe("isSafeHttpUrl", () => {
+  it("accepts plain http(s) addresses in any case and leaves them as typed", () => {
+    expect(isSafeHttpUrl("https://lodge.example")).toBe(true);
+    expect(isSafeHttpUrl("HTTP://lodge.example:8080/path?q=1")).toBe(true);
+  });
+
+  it("refuses a backslash, whitespace, a control character, or userinfo", () => {
+    expect(isSafeHttpUrl("http:\\\\evil.com")).toBe(false);
+    expect(isSafeHttpUrl("https://lodge.example\\evil")).toBe(false);
+    expect(isSafeHttpUrl("https:/\t/evil.com")).toBe(false);
+    expect(isSafeHttpUrl("https://lodge.example/\u0001")).toBe(false);
+    expect(isSafeHttpUrl("https://club.nz@evil.com")).toBe(false);
+    expect(isSafeHttpUrl("https://:pw@evil.com")).toBe(false);
+    expect(isSafeHttpUrl("ftp://lodge.example")).toBe(false);
+    expect(isSafeHttpUrl("https//lodge.example")).toBe(false);
+  });
+});
+
+describe("lookalike lodge names", () => {
+  const key = normalizeLodgeNameKey("Ruapehu Lodge");
+
+  it.each([
+    ["a zero-width space", "Ruapehu​ Lodge"],
+    ["a zero-width joiner", "Ruapehu‍ Lodge"],
+    ["a word joiner", "Ruapehu⁠ Lodge"],
+    ["a byte-order mark", "﻿Ruapehu Lodge"],
+    ["a no-break space", "Ruapehu Lodge"],
+    ["full-width characters", "Ｒuapehu Ｌodge"],
+    ["a different case", "RUAPEHU lodge"],
+    ["extra spaces", "  Ruapehu   Lodge "],
+    ["no space", "RuapehuLodge"],
+  ])("folds %s onto the same key", (_label, spelling) => {
+    expect(normalizeLodgeNameKey(spelling)).toBe(key);
+  });
+
+  it("keeps genuinely different names apart", () => {
+    expect(normalizeLodgeNameKey("Ruapehu Lodge 2")).not.toBe(key);
+    expect(normalizeLodgeNameKey("Ruapehu Hut")).not.toBe(key);
+  });
+
+  it("findSimilarLodgeName reports a lookalike but never the exact same name", () => {
+    const names = ["Ruapehu Lodge", "Tasman Lodge"];
+    expect(findSimilarLodgeName("Ruapehu​ Lodge", names)).toBe("Ruapehu Lodge");
+    expect(findSimilarLodgeName("ruapehu lodge", names)).toBe("Ruapehu Lodge");
+    expect(findSimilarLodgeName("Ruapehu Lodge", names)).toBeNull();
+    expect(findSimilarLodgeName("Whakapapa Lodge", names)).toBeNull();
+  });
 });
 
 describe("amenity list validation", () => {
@@ -90,8 +180,14 @@ describe("amenity list validation", () => {
 
   it("rejects an empty name, an over-long name or description, and an unknown key", () => {
     expect(ok(amenitiesInputSchema, [{ name: "  " }])).toBe(false);
-    expect(ok(amenitiesInputSchema, [{ name: "x".repeat(121) }])).toBe(false);
-    expect(ok(amenitiesInputSchema, [{ name: "a", description: "x".repeat(1001) }])).toBe(false);
+    expect(ok(amenitiesInputSchema, [{ name: "x".repeat(AMENITY_NAME_MAX) }])).toBe(true);
+    expect(ok(amenitiesInputSchema, [{ name: "x".repeat(AMENITY_NAME_MAX + 1) }])).toBe(false);
+    expect(
+      ok(amenitiesInputSchema, [{ name: "a", description: "x".repeat(AMENITY_DESCRIPTION_MAX) }]),
+    ).toBe(true);
+    expect(
+      ok(amenitiesInputSchema, [{ name: "a", description: "x".repeat(AMENITY_DESCRIPTION_MAX + 1) }]),
+    ).toBe(false);
     expect(ok(amenitiesInputSchema, [{ name: "a", icon: "x" }])).toBe(false);
   });
 

@@ -70,7 +70,8 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   requireManager.mockReset().mockResolvedValue(SESSION);
   create.mockReset();
-  findMany.mockReset();
+  // Every name, read for the lookalike check; the GET tests override this.
+  findMany.mockReset().mockResolvedValue([]);
   findUnique.mockReset();
   update.mockReset();
   del.mockReset();
@@ -143,6 +144,32 @@ describe("POST /api/admin/other-lodges", () => {
     const res = await POST(jsonReq({ name: "Ruapehu Lodge" }));
     expect(res.status).toBe(409);
   });
+
+  it.each([
+    ["a zero-width space", "Ruapehu​ Lodge"],
+    ["a no-break space", "Ruapehu Lodge"],
+    ["full-width characters", "Ｒuapehu Lodge"],
+    ["a different case", "ruapehu lodge"],
+  ])("409 for a name that differs from an existing one only by %s, creating nothing", async (_l, name) => {
+    findMany.mockResolvedValue([{ name: "Ruapehu Lodge" }, { name: "Tasman Lodge" }]);
+    const res = await POST(jsonReq({ name }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("Ruapehu Lodge");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("a genuinely different name is created", async () => {
+    findMany.mockResolvedValue([{ name: "Ruapehu Lodge" }]);
+    create.mockResolvedValue(dbRow({ name: "Ruapehu Lodge 2" }));
+    const res = await POST(jsonReq({ name: "Ruapehu Lodge 2" }));
+    expect(res.status).toBe(201);
+  });
+
+  it("400 for a control character in the name, creating nothing", async () => {
+    const res = await POST(jsonReq({ name: "Ruapehu\u0000 Lodge" }));
+    expect(res.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe("PATCH /api/admin/other-lodges/[id]", () => {
@@ -170,6 +197,33 @@ describe("PATCH /api/admin/other-lodges/[id]", () => {
     const res = await PATCH(jsonReq({ distribute: true }, "PATCH"), ctx("l1"));
     expect(res.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("409 for a rename that only looks like ANOTHER lodge's name, writing nothing", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    findMany.mockResolvedValue([{ name: "Tasman Lodge" }]);
+    const res = await PATCH(jsonReq({ name: "tasman​ lodge" }, "PATCH"), ctx("l1"));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("Tasman Lodge");
+    // The lodge's own current name is excluded from the comparison.
+    expect(findMany.mock.calls[0][0].where).toEqual({ id: { not: "l1" } });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("a rename that changes only the case of its OWN name is allowed", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    findMany.mockResolvedValue([{ name: "Tasman Lodge" }]);
+    update.mockResolvedValue(dbRow({ name: "RUAPEHU Lodge" }));
+    const res = await PATCH(jsonReq({ name: "RUAPEHU Lodge" }, "PATCH"), ctx("l1"));
+    expect(res.status).toBe(200);
+    expect(update.mock.calls[0][0].data).toEqual({ name: "RUAPEHU Lodge" });
+  });
+
+  it("sending the unchanged name does not read the other names at all", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    update.mockResolvedValue(dbRow());
+    await PATCH(jsonReq({ name: "Ruapehu Lodge", bedCapacity: 3 }, "PATCH"), ctx("l1"));
+    expect(findMany).not.toHaveBeenCalled();
   });
 });
 

@@ -89,7 +89,8 @@ function req(method: string, body?: unknown) {
 
 beforeEach(() => {
   authenticate.mockReset().mockResolvedValue(authOk(["lodges:write", "lodges:read"]));
-  findMany.mockReset();
+  // The pull's two queries and the upload's lookalike check; GET tests override.
+  findMany.mockReset().mockResolvedValue([]);
   findUnique.mockReset();
   create.mockReset().mockResolvedValue({});
   update.mockReset().mockResolvedValue({});
@@ -215,6 +216,8 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
   it("400 for invalid new-field values, writing nothing", async () => {
     for (const bad of [
       { siteUrl: "javascript:alert(1)" },
+      { siteUrl: "https://club.nz@evil.com" },
+      { siteUrl: "http:\\\\evil.com" },
       { winterSeasonStart: "2026-02-30" },
       { amenities: [{ name: "a" }, { name: "a" }] },
       { freeWifi: "yes" },
@@ -224,6 +227,99 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
     }
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("writes the lodge ROW before touching the amenities, so its lock serialises overlapping replacements", async () => {
+    findUnique.mockResolvedValue(dbRow({ amenities: [{ name: "Old", description: null }] }));
+    await POST(
+      req("POST", { lodges: [{ name: "Whakapapa Lodge", amenities: [{ name: "Sauna" }] }] }),
+    );
+    expect(transaction).toHaveBeenCalledTimes(1);
+    const rowWrite = update.mock.invocationCallOrder[0];
+    expect(rowWrite).toBeLessThan(amenityDeleteMany.mock.invocationCallOrder[0]);
+    expect(rowWrite).toBeLessThan(amenityUpsert.mock.invocationCallOrder[0]);
+  });
+
+  it("a control character anywhere in the payload makes the WHOLE upload a 400 before any write", async () => {
+    findUnique.mockResolvedValue(null);
+    const res = await POST(
+      req("POST", {
+        lodges: [
+          { name: "Fine Lodge", location: "Here" },
+          { name: "Bad\u0000 Lodge" },
+          { name: "Also Fine", bookingPath: "ok" },
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("still writes the upload audit row, with the counts so far, when a later item fails", async () => {
+    findUnique.mockResolvedValue(null);
+    create.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("connection lost"));
+    await expect(
+      POST(req("POST", { lodges: [{ name: "One" }, { name: "Two" }, { name: "Three" }] })),
+    ).rejects.toThrow("connection lost");
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+    const audit = auditCreate.mock.calls[0][0].data;
+    expect(audit.action).toBe("otherLodge.upload");
+    expect(audit.metadata).toEqual({
+      created: 1,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+      total: 3,
+      completed: false,
+    });
+  });
+
+  it("the audit row of a finished upload says so", async () => {
+    findUnique.mockResolvedValue(null);
+    await POST(req("POST", { lodges: [{ name: "One" }] }));
+    expect(auditCreate.mock.calls[0][0].data.metadata).toMatchObject({ created: 1, total: 1, completed: true });
+  });
+});
+
+describe("POST /api/v1/other-lodges (upload) refuses a name that only looks like an existing one", () => {
+  it.each([
+    ["a zero-width space", "Whakapapa​ Lodge"],
+    ["a no-break space", "Whakapapa Lodge"],
+    ["full-width characters", "Ｗhakapapa Lodge"],
+    ["a different case", "whakapapa lodge"],
+  ])("skips a new name that differs by %s as similar-name, creating nothing", async (_l, name) => {
+    findUnique.mockResolvedValue(null); // no EXACT match
+    findMany.mockResolvedValue([{ name: "Whakapapa Lodge" }, { name: "Tasman Lodge" }]);
+    const res = await POST(req("POST", { lodges: [{ name }] }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ created: 0, skipped: 1 });
+    expect(body.results[0]).toEqual({ name, status: "skipped", reason: "similar-name" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("reads the stored names once per upload, and only when a create needs them", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 1 }] }));
+    expect(findMany).not.toHaveBeenCalled();
+
+    findUnique.mockResolvedValue(null);
+    await POST(req("POST", { lodges: [{ name: "New One" }, { name: "New Two" }] }));
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("two lookalikes in the same upload: the first is created, the second skipped", async () => {
+    findUnique.mockResolvedValue(null);
+    const res = await POST(
+      req("POST", { lodges: [{ name: "Kea Lodge" }, { name: "KEA​ Lodge" }] }),
+    );
+    const body = await res.json();
+    expect(body).toMatchObject({ created: 1, skipped: 1 });
+    expect(body.results[1]).toMatchObject({ status: "skipped", reason: "similar-name" });
   });
 });
 

@@ -9,6 +9,7 @@ import {
   amenitiesDiffer,
   amenityCreateRows,
   buildOtherLodgePullEnvelope,
+  findSimilarLodgeName,
   lodgeDetailColumns,
   lodgeDetailDiffers,
   normalizeOtherLodgeText,
@@ -98,6 +99,11 @@ export async function GET(req: Request) {
 
   const serialized = lodges.map(serializeOtherLodgeForClient);
   // Newest updatedAt across the returned set drives the next incremental pull.
+  // A row whose transaction committed AFTER this query ran but whose
+  // `updatedAt` was stamped BEFORE this cursor would be missed by a strict
+  // `> cursor` pull; the booking site guards against that by overlapping its
+  // next `since` by 60 seconds, and the per-row no-op skip on its side keeps
+  // the re-sent rows harmless.
   const cursor = serialized.reduce<string | null>(
     (max, l) => (max === null || l.updatedAt > max ? l.updatedAt : max),
     null,
@@ -166,10 +172,17 @@ function itemDiffers(
  *
  * A club pushes its "Other lodges" entries. Each is keyed by unique `name` and
  * OWNED by the uploading club:
- *   - new name           -> created (sourceClub = this club)
- *   - name owned by club  -> updated (contact/capacity fields only)
+ *   - new name           -> created (sourceClub = this club), unless it only
+ *                            LOOKS like an existing name (`similar-name`)
+ *   - name owned by club  -> updated (every field the item carries: contact,
+ *                            capacity, the detail fields and the amenity set)
  *   - name owned by other -> skipped (a club can't clobber central or another
  *                            club's entry)
+ *
+ * The whole payload is validated before anything is written, so a bad item
+ * makes the whole upload a 400 with no partial effect. The per-item writes
+ * are NOT one transaction; the audit row therefore carries the counts reached
+ * even when a later item fails.
  *
  * Every stored entry then flows back out to every club via the PULL endpoint.
  */
@@ -214,100 +227,129 @@ export async function POST(req: Request) {
   let unchanged = 0;
   let skipped = 0;
 
-  for (const item of parsed.data.lodges) {
-    const name = item.name.trim();
-    const existing = await prisma.otherLodge.findUnique({
-      where: { name },
-      select: otherLodgeSelect,
-    });
+  // Every stored name, loaded once and only when a create needs it, for the
+  // lookalike check (see normalizeLodgeNameKey). Application-level and so
+  // race-prone by design: a lookalike created concurrently is not caught, only
+  // an exact duplicate is (by the unique index, below).
+  let knownNames: string[] | null = null;
+  const nameSimilarTo = async (name: string) => {
+    knownNames ??= (
+      await prisma.otherLodge.findMany({ select: { name: true } })
+    ).map((l) => l.name);
+    return findSimilarLodgeName(name, knownNames);
+  };
+  // A name created by THIS upload counts for the items after it.
+  const noteCreated = (name: string) => {
+    knownNames?.push(name);
+  };
 
-    const now = new Date();
-    if (!existing) {
-      try {
-        await prisma.otherLodge.create({
-          data: {
-            name,
-            ...itemData(item),
-            ...(item.amenities
-              ? { amenities: { create: amenityCreateRows(item.amenities) } }
-              : {}),
-            sourceClubId: club.id,
+  try {
+    for (const item of parsed.data.lodges) {
+      const name = item.name.trim();
+      const existing = await prisma.otherLodge.findUnique({
+        where: { name },
+        select: otherLodgeSelect,
+      });
+
+      const now = new Date();
+      if (!existing) {
+        if (await nameSimilarTo(name)) {
+          skipped++;
+          results.push({ name, status: "skipped", reason: "similar-name" });
+          continue;
+        }
+        try {
+          await prisma.otherLodge.create({
+            data: {
+              name,
+              ...itemData(item),
+              ...(item.amenities
+                ? { amenities: { create: amenityCreateRows(item.amenities) } }
+                : {}),
+              sourceClubId: club.id,
+              lastUpdatedByClubId: club.id,
+              lastUploadedAt: now,
+            },
+          });
+          created++;
+          noteCreated(name);
+          results.push({ name, status: "created" });
+        } catch (error) {
+          // Concurrent create of the same name — treat as an ownership conflict.
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            skipped++;
+            results.push({ name, status: "skipped", reason: "conflict" });
+          } else {
+            throw error;
+          }
+        }
+      } else if (existing.sourceClubId === club.id) {
+        const data = itemData(item);
+        // Only write (and bump `updatedAt`) when a column actually changed, so an
+        // unchanged re-upload does not churn the row or the distribution cursor.
+        const amenitiesChanged =
+          item.amenities !== undefined &&
+          amenitiesDiffer(existing.amenities, item.amenities);
+        if (itemDiffers(data, existing) || amenitiesChanged) {
+          const write = {
+            ...data,
             lastUpdatedByClubId: club.id,
             lastUploadedAt: now,
-          },
-        });
-        created++;
-        results.push({ name, status: "created" });
-      } catch (error) {
-        // Concurrent create of the same name — treat as an ownership conflict.
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2002"
-        ) {
-          skipped++;
-          results.push({ name, status: "skipped", reason: "conflict" });
+            // Moved explicitly: when only the amenities changed no column above
+            // does it, and the incremental pull is keyed on this column.
+            updatedAt: now,
+          };
+          if (amenitiesChanged && item.amenities) {
+            const amenities = item.amenities;
+            // Row first: its lock serialises the amenity replacement against
+            // any overlapping writer (see replaceAmenities).
+            await prisma.$transaction(async (tx) => {
+              await tx.otherLodge.update({ where: { id: existing.id }, data: write });
+              await replaceAmenities(tx, existing.id, amenities, existing.amenities);
+            });
+          } else {
+            await prisma.otherLodge.update({
+              where: { id: existing.id },
+              data: write,
+            });
+          }
+          updated++;
+          results.push({ name, status: "updated" });
         } else {
-          throw error;
+          unchanged++;
+          results.push({ name, status: "unchanged" });
         }
-      }
-    } else if (existing.sourceClubId === club.id) {
-      const data = itemData(item);
-      // Only write (and bump `updatedAt`) when a column actually changed, so an
-      // unchanged re-upload does not churn the row or the distribution cursor.
-      const amenitiesChanged =
-        item.amenities !== undefined &&
-        amenitiesDiffer(existing.amenities, item.amenities);
-      if (itemDiffers(data, existing) || amenitiesChanged) {
-        const write = {
-          ...data,
-          lastUpdatedByClubId: club.id,
-          lastUploadedAt: now,
-          // Moved explicitly: when only the amenities changed no column above
-          // does it, and the incremental pull is keyed on this column.
-          updatedAt: now,
-        };
-        if (amenitiesChanged && item.amenities) {
-          const amenities = item.amenities;
-          await prisma.$transaction(async (tx) => {
-            await replaceAmenities(tx, existing.id, amenities, existing.amenities);
-            await tx.otherLodge.update({ where: { id: existing.id }, data: write });
-          });
-        } else {
-          await prisma.otherLodge.update({
-            where: { id: existing.id },
-            data: write,
-          });
-        }
-        updated++;
-        results.push({ name, status: "updated" });
       } else {
-        unchanged++;
-        results.push({ name, status: "unchanged" });
+        skipped++;
+        results.push({
+          name,
+          status: "skipped",
+          reason: existing.sourceClubId === null ? "owned-centrally" : "owned-by-other-club",
+        });
       }
-    } else {
-      skipped++;
-      results.push({
-        name,
-        status: "skipped",
-        reason: existing.sourceClubId === null ? "owned-centrally" : "owned-by-other-club",
-      });
     }
+  } finally {
+    // In a `finally` so an upload that fails part-way is still audited, with
+    // the counts it reached; `completed` says whether it got to the end.
+    await recordAudit({
+      action: "otherLodge.upload",
+      clubId: club.id,
+      tokenId: token.id,
+      ipAddress: ip,
+      userAgent: req.headers.get("user-agent"),
+      metadata: {
+        created,
+        updated,
+        unchanged,
+        skipped,
+        total: parsed.data.lodges.length,
+        completed: created + updated + unchanged + skipped === parsed.data.lodges.length,
+      },
+    });
   }
-
-  await recordAudit({
-    action: "otherLodge.upload",
-    clubId: club.id,
-    tokenId: token.id,
-    ipAddress: ip,
-    userAgent: req.headers.get("user-agent"),
-    metadata: {
-      created,
-      updated,
-      unchanged,
-      skipped,
-      total: parsed.data.lodges.length,
-    },
-  });
 
   return NextResponse.json({ created, updated, unchanged, skipped, results });
 }

@@ -10,13 +10,13 @@ import {
   ImageRejectedError,
   LIBRARY_IMAGE_PROFILE,
   LIBRARY_LOGO_PROFILE,
-  LIBRARY_MAX_FILES,
   writeProcessedImage,
 } from "@/lib/uploads";
 import {
   imageNameFromFilename,
   imageSelect,
   isImageKind,
+  LIBRARY_MAX_FILES,
   serializeImage,
 } from "@/lib/image-library";
 

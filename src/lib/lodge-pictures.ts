@@ -1,6 +1,33 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 
+export type LodgePictureLabel = "lodge image" | "lodge logo" | "picture";
+
+/**
+ * The one message for a chosen picture that is not there, whether the check
+ * below found it missing or the write itself did (the picture was deleted in
+ * the moment between the two: Prisma P2025 on the `connect`).
+ */
+export function missingPictureMessage(label: LodgePictureLabel): string {
+  return `The chosen ${label} no longer exists. Choose another.`;
+}
+
+/**
+ * Which picture a failed `connect` must have been about, for the message above:
+ * known when only one was chosen, otherwise just "picture".
+ */
+export function chosenPictureLabel(input: {
+  imageId?: string | null;
+  logoId?: string | null;
+}): LodgePictureLabel | null {
+  const image = Boolean(input.imageId);
+  const logo = Boolean(input.logoId);
+  if (image && logo) return "picture";
+  if (image) return "lodge image";
+  if (logo) return "lodge logo";
+  return null;
+}
+
 /**
  * Check a lodge's chosen picture and logo against the image library.
  *
@@ -16,7 +43,7 @@ export async function validateLodgePictures(input: {
   imageId?: string | null;
   logoId?: string | null;
 }): Promise<string | null> {
-  const wanted: Array<{ id: string; kind: "IMAGE" | "LOGO"; label: string }> = [];
+  const wanted: Array<{ id: string; kind: "IMAGE" | "LOGO"; label: LodgePictureLabel }> = [];
   if (input.imageId) wanted.push({ id: input.imageId, kind: "IMAGE", label: "lodge image" });
   if (input.logoId) wanted.push({ id: input.logoId, kind: "LOGO", label: "lodge logo" });
   if (wanted.length === 0) return null;
@@ -29,7 +56,7 @@ export async function validateLodgePictures(input: {
 
   for (const w of wanted) {
     const kind = kinds.get(w.id);
-    if (!kind) return `The chosen ${w.label} no longer exists. Choose another.`;
+    if (!kind) return missingPictureMessage(w.label);
     if (kind !== w.kind) {
       return w.kind === "IMAGE"
         ? "A logo cannot be used as the lodge image. Choose a lodge image."

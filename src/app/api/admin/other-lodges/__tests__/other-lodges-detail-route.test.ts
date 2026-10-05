@@ -30,6 +30,8 @@ vi.mock("@/lib/db", () => ({
     otherLodge: {
       create: (...a: unknown[]) => create(...a),
       findUnique: (...a: unknown[]) => findUnique(...a),
+      // Every name, read for the lookalike check on create and rename.
+      findMany: async () => [],
       update: (...a: unknown[]) => update(...a),
     },
     $transaction: (fn: (t: typeof tx) => unknown) => transaction(fn),
@@ -88,7 +90,8 @@ beforeEach(() => {
   requireManager.mockReset().mockResolvedValue(SESSION);
   create.mockReset();
   findUnique.mockReset();
-  findUniqueOrThrow.mockReset();
+  // The row re-read inside the transaction, after the amenities are replaced.
+  findUniqueOrThrow.mockReset().mockResolvedValue(dbRow());
   update.mockReset();
   amenityDeleteMany.mockReset().mockResolvedValue({ count: 0 });
   amenityUpsert.mockReset().mockResolvedValue({});
@@ -159,10 +162,15 @@ describe("PATCH /api/admin/other-lodges/:id with the new fields", () => {
     findUnique.mockResolvedValue(
       dbRow({ amenities: [{ name: "Old", description: null }] }),
     );
-    update.mockResolvedValue(dbRow({ amenities: [{ name: "Sauna", description: null }] }));
+    update.mockResolvedValue({});
+    findUniqueOrThrow.mockResolvedValue(
+      dbRow({ amenities: [{ name: "Sauna", description: null }] }),
+    );
 
     const res = await PATCH(jsonReq({ amenities: [{ name: "Sauna" }] }, "PATCH"), ctx);
     expect(res.status).toBe(200);
+    // The response is the row as re-read AFTER the replacement.
+    expect((await res.json()).otherLodge.amenities).toEqual([{ name: "Sauna", description: null }]);
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(amenityDeleteMany).toHaveBeenCalledWith({
@@ -218,6 +226,19 @@ describe("PATCH /api/admin/other-lodges/:id with the new fields", () => {
     expect(update.mock.calls[0][0].data).toMatchObject({ freeWifi: true });
     const audit = auditCreate.mock.calls[0][0].data;
     expect(audit.metadata.changedFields).toEqual(["freeWifi", "amenities"]);
+  });
+
+  it("writes the lodge ROW before touching the amenities, so its lock serialises overlapping replacements", async () => {
+    findUnique.mockResolvedValue(dbRow({ amenities: [{ name: "Old", description: null }] }));
+    update.mockResolvedValue({});
+    await PATCH(jsonReq({ amenities: [{ name: "Sauna" }] }, "PATCH"), ctx);
+    const rowWrite = update.mock.invocationCallOrder[0];
+    expect(rowWrite).toBeLessThan(amenityDeleteMany.mock.invocationCallOrder[0]);
+    expect(rowWrite).toBeLessThan(amenityUpsert.mock.invocationCallOrder[0]);
+    // And the row is re-read for the response only after both.
+    expect(findUniqueOrThrow.mock.invocationCallOrder[0]).toBeGreaterThan(
+      amenityUpsert.mock.invocationCallOrder[0],
+    );
   });
 
   it("400 for an invalid site URL, and nothing is written", async () => {

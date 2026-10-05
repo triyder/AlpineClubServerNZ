@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const requireManager = vi.fn();
 vi.mock("@/lib/admin-guard", () => ({
@@ -15,6 +16,8 @@ vi.mock("@/lib/db", () => ({
     otherLodge: {
       create: (...a: unknown[]) => create(...a),
       findUnique: (...a: unknown[]) => findUnique(...a),
+      // Every name, read for the lookalike check on create and rename.
+      findMany: async () => [],
       update: (...a: unknown[]) => update(...a),
     },
     image: { findMany: (...a: unknown[]) => imageFindMany(...a) },
@@ -126,7 +129,24 @@ describe("choosing a lodge's picture and logo — create", () => {
     expect((await res.json()).error).toMatch(/lodge image cannot be used as the logo/i);
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("400, with the same message, when the picture is deleted between the check and the write (P2025)", async () => {
+    imageFindMany.mockResolvedValue([{ id: "logo1", kind: "LOGO" }]);
+    create.mockRejectedValue(notFound());
+    const res = await POST(jsonReq("POST", { name: "X", logoId: "logo1" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("The chosen lodge logo no longer exists. Choose another.");
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("a P2025 with no picture chosen is not swallowed", async () => {
+    create.mockRejectedValue(notFound());
+    await expect(POST(jsonReq("POST", { name: "X" }))).rejects.toMatchObject({ code: "P2025" });
+  });
 });
+
+const notFound = () =>
+  new Prisma.PrismaClientKnownRequestError("not found", { code: "P2025", clientVersion: "7" });
 
 describe("choosing a lodge's picture and logo — update", () => {
   it("connects a chosen picture", async () => {
@@ -158,6 +178,24 @@ describe("choosing a lodge's picture and logo — update", () => {
     const res = await PATCH(jsonReq("PATCH", { logoId: "img1" }), ctx);
     expect(res.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("400, with the same message, when the picture is deleted between the check and the write (P2025)", async () => {
+    imageFindMany.mockResolvedValue([{ id: "img1", kind: "IMAGE" }]);
+    update.mockRejectedValue(notFound());
+    const res = await PATCH(jsonReq("PATCH", { imageId: "img1" }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("The chosen lodge image no longer exists. Choose another.");
+  });
+
+  it("names just 'picture' when both were chosen and one has gone", async () => {
+    imageFindMany.mockResolvedValue([
+      { id: "img1", kind: "IMAGE" },
+      { id: "logo1", kind: "LOGO" },
+    ]);
+    update.mockRejectedValue(notFound());
+    const res = await PATCH(jsonReq("PATCH", { imageId: "img1", logoId: "logo1" }), ctx);
+    expect((await res.json()).error).toBe("The chosen picture no longer exists. Choose another.");
   });
 
   it("returns the chosen picture and logo with their public URLs", async () => {

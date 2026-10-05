@@ -5,6 +5,7 @@ import {
   toImageRef,
   type LodgeImageRef,
 } from "@/lib/image-library";
+import { NO_CONTROL_CHARS_MESSAGE, noControlChars } from "@/lib/control-chars";
 
 /**
  * Helpers for the central "Other lodges" registry (Admin -> Lodges). Replicates
@@ -216,21 +217,101 @@ export function normalizeOtherLodgeText(value: string | null | undefined) {
 const blankToNull = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? null : value;
 
+/**
+ * A single-line text field: trimmed, bounded, no control characters. The
+ * control-character refinement is a `.refine`, which the contract fingerprint
+ * (a JSON Schema of the upload shape) does not see, so adding it is not a
+ * contract change.
+ */
+function lineText(max: number, min = 0) {
+  const bounded = min > 0 ? z.string().trim().min(min) : z.string().trim();
+  return bounded.max(max).refine(noControlChars, NO_CONTROL_CHARS_MESSAGE);
+}
+
 // An optional email that treats blank input as "not set": the admin form sends
 // "" for a cleared field, and "" is not a valid email — fold it to null before
 // the format check so clearing the field is not a validation error.
 const optionalEmail = z.preprocess(
   blankToNull,
-  z.string().trim().max(320).email().nullable().optional(),
+  z
+    .string()
+    .trim()
+    .max(320)
+    .email()
+    .refine(noControlChars, NO_CONTROL_CHARS_MESSAGE)
+    .nullable()
+    .optional(),
 );
 
-function isHttpUrl(value: string): boolean {
+/**
+ * A lodge's website address as it may be stored and handed to every club, where
+ * it is rendered as a link. The WHATWG parser alone is too forgiving: it reads
+ * `http:\\evil.com` and `https:/\t/evil.com` as `https://evil.com`, and
+ * accepts `https://club.nz@evil.com`, whose "club.nz" is a username that a
+ * reader takes for the host. So the RAW text is checked, and stored as typed:
+ *
+ *  - it starts with `http://` or `https://` (any case);
+ *  - it carries no whitespace, control character or backslash;
+ *  - parsed, it has no username or password.
+ */
+export function isSafeHttpUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value)) return false;
+  if (/[\s\u0000-\u001F\u007F\\]/.test(value)) return false;
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === ""
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * The key two lodge names are compared on for "too similar to tell apart":
+ * NFKC-folded (full-width and compatibility characters to their plain forms),
+ * every format and control character removed (zero-width space and joiners,
+ * word joiner, BOM), every kind of whitespace removed (NBSP included) and
+ * lower-cased. The unique index is exact and case-sensitive, so without this a
+ * club could upload "Ruapehu Lodge" with a zero-width space in it and have a
+ * convincing duplicate distributed to every club.
+ *
+ * What it does NOT fold: homoglyphs from other scripts (a Cyrillic "а" for a
+ * Latin "a"), which NFKC leaves alone.
+ */
+export function normalizeLodgeNameKey(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/[\p{Cf}\p{Cc}]/gu, "")
+    .replace(/\s/gu, "")
+    .toLowerCase();
+}
+
+/**
+ * The stored name whose key equals `name`'s but whose spelling differs, or
+ * null. An exact match is NOT reported: that is the unique index's job (and
+ * the upload's "owned" paths). Application-level and therefore race-prone by
+ * design — two lookalikes created in the same instant both pass; only the
+ * exact-name index is atomic — which is accepted, because the alternative is
+ * a schema change (a generated normalised column with its own unique index).
+ */
+export function findSimilarLodgeName(
+  name: string,
+  existingNames: Iterable<string>,
+): string | null {
+  const key = normalizeLodgeNameKey(name);
+  for (const existing of existingNames) {
+    if (existing !== name && normalizeLodgeNameKey(existing) === key) {
+      return existing;
+    }
+  }
+  return null;
+}
+
+export function similarLodgeNameMessage(existing: string): string {
+  return `A lodge named "${existing}" already exists; the new name is too similar to be told apart.`;
 }
 
 /** A real calendar date: `2026-02-30` matches the pattern but is not one. */
@@ -256,13 +337,15 @@ const dateOnlyField = z.preprocess(
 );
 
 export const AMENITIES_PER_LODGE_MAX = 50;
+export const AMENITY_NAME_MAX = 120;
+export const AMENITY_DESCRIPTION_MAX = 1000;
 
 export const amenityInputSchema = z
   .object({
-    name: z.string().trim().min(1).max(120),
+    name: lineText(AMENITY_NAME_MAX, 1),
     description: z.preprocess(
       blankToNull,
-      z.string().trim().max(1000).nullable().optional(),
+      lineText(AMENITY_DESCRIPTION_MAX).nullable().optional(),
     ),
   })
   .strict();
@@ -290,11 +373,14 @@ export const lodgeDetailShape = {
       .string()
       .trim()
       .max(500)
-      .refine(isHttpUrl, "Site URL must start with http:// or https://")
+      .refine(
+        isSafeHttpUrl,
+        "Site URL must start with http:// or https:// and name only a host and path",
+      )
       .nullable()
       .optional(),
   ),
-  bookingPath: z.string().trim().max(300).nullable().optional(),
+  bookingPath: lineText(300).nullable().optional(),
   requiresLodgeCustodian: z.boolean().optional(),
   freeWifi: z.boolean().optional(),
   quietRoom: z.boolean().optional(),
@@ -304,7 +390,7 @@ export const lodgeDetailShape = {
   breakfastIncluded: z.boolean().optional(),
   lunchIncluded: z.boolean().optional(),
   dinnerIncluded: z.boolean().optional(),
-  cancellationPeriod: z.string().trim().max(200).nullable().optional(),
+  cancellationPeriod: lineText(200).nullable().optional(),
   winterSeasonStart: dateOnlyField,
   summerSeasonStart: dateOnlyField,
   /** When present, REPLACES the lodge's whole amenity set. */
@@ -412,15 +498,24 @@ const lodgePictureShape = {
   logoId: z.string().trim().min(1).max(64).nullable().optional(),
 };
 
+export const LODGE_NAME_MAX = 120;
+
+/** The contact and capacity fields, identical on create, update and upload. */
+const lodgeContactShape = {
+  location: lineText(300).nullable().optional(),
+  bookingOfficerName: lineText(200).nullable().optional(),
+  bookingOfficerEmail: optionalEmail,
+  bookingOfficerPhone: lineText(50).nullable().optional(),
+  // Informational bed count; non-negative, capped well above any real lodge.
+  bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
+};
+
+const lodgeNameField = lineText(LODGE_NAME_MAX, 1);
+
 export const otherLodgeCreateSchema = z
   .object({
-    name: z.string().trim().min(1).max(120),
-    location: z.string().trim().max(300).nullable().optional(),
-    bookingOfficerName: z.string().trim().max(200).nullable().optional(),
-    bookingOfficerEmail: optionalEmail,
-    bookingOfficerPhone: z.string().trim().max(50).nullable().optional(),
-    // Informational bed count; non-negative, capped well above any real lodge.
-    bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
+    name: lodgeNameField,
+    ...lodgeContactShape,
     ...lodgeDetailShape,
     ...lodgePictureShape,
   })
@@ -492,12 +587,8 @@ export function buildOtherLodgePullEnvelope(input: {
 // accepted from clients; the server stamps it from the authenticated club.
 export const otherLodgeUploadItemSchema = z
   .object({
-    name: z.string().trim().min(1).max(120),
-    location: z.string().trim().max(300).nullable().optional(),
-    bookingOfficerName: z.string().trim().max(200).nullable().optional(),
-    bookingOfficerEmail: optionalEmail,
-    bookingOfficerPhone: z.string().trim().max(50).nullable().optional(),
-    bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
+    name: lodgeNameField,
+    ...lodgeContactShape,
     ...lodgeDetailShape,
   })
   .strict();
@@ -509,12 +600,8 @@ export const otherLodgeUploadSchema = z.object({
 
 export const otherLodgeUpdateSchema = z
   .object({
-    name: z.string().trim().min(1).max(120).optional(),
-    location: z.string().trim().max(300).nullable().optional(),
-    bookingOfficerName: z.string().trim().max(200).nullable().optional(),
-    bookingOfficerEmail: optionalEmail,
-    bookingOfficerPhone: z.string().trim().max(50).nullable().optional(),
-    bedCapacity: z.number().int().min(0).max(100000).nullable().optional(),
+    name: lodgeNameField.optional(),
+    ...lodgeContactShape,
     ...lodgeDetailShape,
     ...lodgePictureShape,
   })

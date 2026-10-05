@@ -4,27 +4,25 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import sharp, { type OutputInfo } from "sharp";
 import { uploadsDir } from "@/lib/env";
+import { MAX_IMAGE_BYTES_TOTAL } from "@/lib/image-library";
 
 /**
- * Storage and optimisation for post images.
+ * Storage and optimisation for every image this server keeps: post images and
+ * the image library's lodge pictures and logos.
  *
  * Every uploaded file is decoded, resized, re-encoded as WebP and written to
  * local disk; the original is never persisted. Callers hand us bytes and get
- * back the row data for a `PostImage`.
+ * back the row data for a `PostImage` or an `Image`.
  */
 
 /**
- * Caddy caps the whole request body at 10MB (Caddyfile:27) and that cap stays,
- * so the image budget is sized to fit underneath it with room for multipart
- * boundaries and the text fields.
- *
- * Note this is a COMBINED budget, not per-file: a post may carry four images or
- * one, but their total must fit. Clients must show a running total, because a
- * body that exceeds the Caddy limit is rejected at the edge as a bare 413 with
- * no JSON body for them to explain.
+ * Most images one post may carry. The COMBINED byte budget they share
+ * (`MAX_IMAGE_BYTES_TOTAL`) is defined in `image-library.ts`, beside the library
+ * batch limit, because the browser mirrors both; the Caddy body cap it sits
+ * under is explained there. A post may carry four images or one, but their
+ * total must fit, so clients show a running total.
  */
 export const MAX_IMAGES = 4;
-export const MAX_IMAGE_BYTES_TOTAL = 9 * 1024 * 1024;
 
 /** Longest edge of the stored derivative. */
 export const MAX_WIDTH = 1920;
@@ -61,9 +59,6 @@ export const LIBRARY_LOGO_PROFILE: ImageProfile = {
   maxWidth: 600,
   maxHeight: 600,
 };
-
-/** Most files one library upload request may carry. */
-export const LIBRARY_MAX_FILES = 10;
 
 /**
  * Ceiling on decoded pixels. A small file can decode to an enormous bitmap, so

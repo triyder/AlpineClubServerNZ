@@ -78,7 +78,8 @@ function req(method: string, url: string, body?: unknown) {
 
 beforeEach(() => {
   authenticate.mockReset();
-  findMany.mockReset();
+  // The pull's two queries and the upload's lookalike check; GET tests override.
+  findMany.mockReset().mockResolvedValue([]);
   findUnique.mockReset();
   create.mockReset();
   update.mockReset();
