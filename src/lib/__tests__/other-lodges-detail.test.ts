@@ -8,14 +8,20 @@ import {
   findSimilarLodgeName,
   formatLodgeDate,
   isSafeHttpUrl,
+  LODGE_BOOLEAN_FIELDS,
+  LODGE_DATE_FIELDS,
+  LODGE_TEXT_FIELDS,
   lodgeDetailColumns,
   lodgeDetailDiffers,
+  lodgeDetailShape,
   normalizeLodgeNameKey,
   otherLodgeCreateSchema,
+  otherLodgeSelect,
   otherLodgeUpdateSchema,
   otherLodgeUploadItemSchema,
   parseLodgeDate,
   serializeOtherLodgeForClient,
+  UNLISTED_OTHER_LODGE_COLUMNS,
   type OtherLodgeRecord,
 } from "@/lib/other-lodges";
 
@@ -195,6 +201,27 @@ describe("amenity list validation", () => {
     const make = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `a${i}` }));
     expect(ok(amenitiesInputSchema, make(AMENITIES_PER_LODGE_MAX))).toBe(true);
     expect(ok(amenitiesInputSchema, make(AMENITIES_PER_LODGE_MAX + 1))).toBe(false);
+  });
+});
+
+describe("the detail-field lists are the single source", () => {
+  it("every OtherLodge column is a detail field or excused (the type-level census is empty)", () => {
+    // The real check is the type of UNLISTED_OTHER_LODGE_COLUMNS, which fails
+    // `tsc` the moment a new Prisma column is in neither list; this pins the
+    // runtime value so the export cannot quietly become something else.
+    expect(UNLISTED_OTHER_LODGE_COLUMNS).toEqual({});
+  });
+
+  it("the validation shape carries exactly the listed fields plus amenities", () => {
+    expect(Object.keys(lodgeDetailShape).sort()).toEqual(
+      [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, "amenities"].sort(),
+    );
+  });
+
+  it("the Prisma select carries every listed field", () => {
+    for (const key of [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS]) {
+      expect(otherLodgeSelect[key], key).toBe(true);
+    }
   });
 });
 

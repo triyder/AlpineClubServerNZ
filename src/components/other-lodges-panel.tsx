@@ -23,32 +23,35 @@ import {
 } from "@/components/ui/table";
 import { ImagePicker } from "@/components/image-picker";
 import type { LodgeImageRef } from "@/lib/image-library";
-import type { SerializedOtherLodge } from "@/lib/other-lodges";
+import {
+  AMENITIES_PER_LODGE_MAX,
+  AMENITY_DESCRIPTION_MAX,
+  AMENITY_NAME_MAX,
+  LODGE_BOOLEAN_FIELDS,
+  LODGE_NAME_MAX,
+  type LodgeBooleanField,
+  type SerializedOtherLodge,
+} from "@/lib/other-lodges";
 
-type BooleanFieldKey =
-  | "requiresLodgeCustodian"
-  | "freeWifi"
-  | "quietRoom"
-  | "dryingRoom"
-  | "sharedKitchen"
-  | "wheelchairAccessible"
-  | "breakfastIncluded"
-  | "lunchIncluded"
-  | "dinnerIncluded";
+// A label for EVERY boolean detail field: `Record` over the field list's key
+// type, so a field added to the list without a label here is a type error (a
+// `satisfies` on an array would only catch an extra key, never a missing one).
+const BOOLEAN_FIELD_LABELS: Record<LodgeBooleanField, string> = {
+  requiresLodgeCustodian: "Requires lodge custodian",
+  freeWifi: "Free wifi",
+  quietRoom: "Quiet room",
+  dryingRoom: "Drying room",
+  sharedKitchen: "Shared kitchen",
+  wheelchairAccessible: "Wheelchair accessible",
+  breakfastIncluded: "Breakfast included",
+  lunchIncluded: "Lunch included",
+  dinnerIncluded: "Dinner included",
+};
 
-// `satisfies` keeps this list in step with SerializedOtherLodge: a key that is
-// not a boolean field on the lodge is a type error.
-const BOOLEAN_FIELDS: { key: BooleanFieldKey; label: string }[] = [
-  { key: "requiresLodgeCustodian", label: "Requires lodge custodian" },
-  { key: "freeWifi", label: "Free wifi" },
-  { key: "quietRoom", label: "Quiet room" },
-  { key: "dryingRoom", label: "Drying room" },
-  { key: "sharedKitchen", label: "Shared kitchen" },
-  { key: "wheelchairAccessible", label: "Wheelchair accessible" },
-  { key: "breakfastIncluded", label: "Breakfast included" },
-  { key: "lunchIncluded", label: "Lunch included" },
-  { key: "dinnerIncluded", label: "Dinner included" },
-] satisfies { key: keyof SerializedOtherLodge; label: string }[];
+const BOOLEAN_FIELDS = LODGE_BOOLEAN_FIELDS.map((key) => ({
+  key,
+  label: BOOLEAN_FIELD_LABELS[key],
+}));
 
 type AmenityRow = { name: string; description: string };
 
@@ -64,23 +67,15 @@ type FormState = {
   cancellationPeriod: string;
   winterSeasonStart: string;
   summerSeasonStart: string;
-  flags: Record<BooleanFieldKey, boolean>;
+  flags: Record<LodgeBooleanField, boolean>;
   amenities: AmenityRow[];
   image: LodgeImageRef | null;
   logo: LodgeImageRef | null;
 };
 
-const emptyFlags: Record<BooleanFieldKey, boolean> = {
-  requiresLodgeCustodian: false,
-  freeWifi: false,
-  quietRoom: false,
-  dryingRoom: false,
-  sharedKitchen: false,
-  wheelchairAccessible: false,
-  breakfastIncluded: false,
-  lunchIncluded: false,
-  dinnerIncluded: false,
-};
+const emptyFlags = Object.fromEntries(
+  LODGE_BOOLEAN_FIELDS.map((key) => [key, false]),
+) as Record<LodgeBooleanField, boolean>;
 
 const emptyForm: FormState = {
   name: "",
@@ -114,8 +109,8 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
     winterSeasonStart: lodge.winterSeasonStart ?? "",
     summerSeasonStart: lodge.summerSeasonStart ?? "",
     flags: Object.fromEntries(
-      BOOLEAN_FIELDS.map(({ key }) => [key, lodge[key]]),
-    ) as Record<BooleanFieldKey, boolean>,
+      LODGE_BOOLEAN_FIELDS.map((key) => [key, lodge[key]]),
+    ) as Record<LodgeBooleanField, boolean>,
     amenities: lodge.amenities.map((a) => ({
       name: a.name,
       description: a.description ?? "",
@@ -222,8 +217,8 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
       return;
     }
     const named = form.amenities.filter((a) => a.name.trim() !== "");
-    if (named.length > 50) {
-      setError("A lodge can have at most 50 amenities.");
+    if (named.length > AMENITIES_PER_LODGE_MAX) {
+      setError(`A lodge can have at most ${AMENITIES_PER_LODGE_MAX} amenities.`);
       return;
     }
     if (
@@ -323,7 +318,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
         onClose={cancelEdit}
         dismissible={!saving}
         title={creating ? "Add other lodge" : "Edit other lodge"}
-        description="Only the name is required. Everything else is optional contact and capacity detail."
+        description="Only the name is required. Everything else — contact, capacity, website, facilities, seasons, amenities and pictures — is optional."
       >
         {error ? (
           <p className="text-sm text-destructive" role="alert">
@@ -337,7 +332,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                 <Input
                   id="ol-name"
                   value={form.name}
-                  maxLength={120}
+                  maxLength={LODGE_NAME_MAX}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, name: e.target.value }))
                   }
@@ -528,7 +523,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                     aria-label={`Amenity ${index + 1} name`}
                     placeholder="Name"
                     value={amenity.name}
-                    maxLength={120}
+                    maxLength={AMENITY_NAME_MAX}
                     onChange={(e) =>
                       setForm((p) => ({
                         ...p,
@@ -542,7 +537,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                     aria-label={`Amenity ${index + 1} description`}
                     placeholder="Description (optional)"
                     value={amenity.description}
-                    maxLength={1000}
+                    maxLength={AMENITY_DESCRIPTION_MAX}
                     onChange={(e) =>
                       setForm((p) => ({
                         ...p,
@@ -574,7 +569,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={form.amenities.length >= 50}
+                disabled={form.amenities.length >= AMENITIES_PER_LODGE_MAX}
                 onClick={() =>
                   setForm((p) => ({
                     ...p,

@@ -14,9 +14,14 @@ import { NO_CONTROL_CHARS_MESSAGE, noControlChars } from "@/lib/control-chars";
  */
 
 /**
- * The lodge detail columns added in API version 1.1. Kept in ONE list so the
- * select, the serialisers, the validation schemas and the writers cannot drift
- * apart — adding a column here is what makes every one of them carry it.
+ * The lodge detail columns added in API version 1.1, in THREE lists that are
+ * the single source of every other shape here: the Prisma select, the
+ * serialised types and serialisers, the boolean and date parts of the
+ * validation shape, the writers' column builder and the admin panel's
+ * facility checkboxes are all derived from them. Adding a column means adding
+ * it to one list; the census at the bottom of this block is what makes a
+ * column added to `schema.prisma` but to neither list nor the excused set a
+ * type error rather than a silent omission.
  */
 export const LODGE_BOOLEAN_FIELDS = [
   "requiresLodgeCustodian",
@@ -39,22 +44,58 @@ export const LODGE_DATE_FIELDS = [
   "summerSeasonStart",
 ] as const;
 
-const LODGE_DETAIL_SELECT = {
-  siteUrl: true,
-  bookingPath: true,
-  requiresLodgeCustodian: true,
-  freeWifi: true,
-  quietRoom: true,
-  dryingRoom: true,
-  sharedKitchen: true,
-  wheelchairAccessible: true,
-  breakfastIncluded: true,
-  lunchIncluded: true,
-  dinnerIncluded: true,
-  cancellationPeriod: true,
-  winterSeasonStart: true,
-  summerSeasonStart: true,
-} as const;
+export type LodgeBooleanField = (typeof LODGE_BOOLEAN_FIELDS)[number];
+export type LodgeTextField = (typeof LODGE_TEXT_FIELDS)[number];
+export type LodgeDateField = (typeof LODGE_DATE_FIELDS)[number];
+export type LodgeDetailField = LodgeBooleanField | LodgeTextField | LodgeDateField;
+
+/** `{ a: value, b: value }` for a list of keys, typed by the key union. */
+function forKeys<K extends string, V>(
+  keys: ReadonlyArray<K>,
+  value: (key: K) => V,
+): { [P in K]: V } {
+  return Object.fromEntries(keys.map((k) => [k, value(k)])) as { [P in K]: V };
+}
+
+const LODGE_DETAIL_SELECT = forKeys<LodgeDetailField, true>(
+  [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS],
+  () => true,
+);
+
+/**
+ * Every `OtherLodge` column that is deliberately NOT a detail field: identity,
+ * contact and capacity, the picture foreign keys, provenance and timestamps.
+ */
+const EXCUSED_OTHER_LODGE_COLUMNS = [
+  "id",
+  "name",
+  "location",
+  "bookingOfficerName",
+  "bookingOfficerEmail",
+  "bookingOfficerPhone",
+  "bedCapacity",
+  "imageId",
+  "logoId",
+  "sourceClubId",
+  "lastUpdatedByClubId",
+  "lastUploadedAt",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+type OtherLodgeColumn = Prisma.OtherLodgeScalarFieldEnum;
+type UnlistedOtherLodgeColumn = Exclude<
+  OtherLodgeColumn,
+  LodgeDetailField | (typeof EXCUSED_OTHER_LODGE_COLUMNS)[number]
+>;
+
+/**
+ * The type-level census. `Record<never, never>` is `{}`, so this compiles
+ * exactly when every column of the Prisma model is in one of the three lists
+ * or the excused set; a new column makes the next line fail to type-check,
+ * naming the column. Exported so a test can also pin it as empty.
+ */
+export const UNLISTED_OTHER_LODGE_COLUMNS: Record<UnlistedOtherLodgeColumn, never> = {};
 
 export const otherLodgeSelect = {
   id: true,
@@ -89,25 +130,14 @@ export interface LodgeAmenity {
   description: string | null;
 }
 
-/** The detail fields as they leave the server, to admins and to clubs alike. */
-export interface SerializedLodgeDetail {
-  siteUrl: string | null;
-  bookingPath: string | null;
-  requiresLodgeCustodian: boolean;
-  freeWifi: boolean;
-  quietRoom: boolean;
-  dryingRoom: boolean;
-  sharedKitchen: boolean;
-  wheelchairAccessible: boolean;
-  breakfastIncluded: boolean;
-  lunchIncluded: boolean;
-  dinnerIncluded: boolean;
-  cancellationPeriod: string | null;
-  /** Calendar date `YYYY-MM-DD`, or null. */
-  winterSeasonStart: string | null;
-  summerSeasonStart: string | null;
-  amenities: LodgeAmenity[];
-}
+/**
+ * The detail fields as they leave the server, to admins and to clubs alike:
+ * text as stored or null, booleans as booleans, the dates as calendar
+ * `YYYY-MM-DD` strings or null, plus the amenity list.
+ */
+export type SerializedLodgeDetail = { [K in LodgeTextField]: string | null } & {
+  [K in LodgeBooleanField]: boolean;
+} & { [K in LodgeDateField]: string | null } & { amenities: LodgeAmenity[] };
 
 /** `YYYY-MM-DD` for a DATE column (read back as UTC midnight), or null. */
 export function formatLodgeDate(date: Date | null): string | null {
@@ -124,20 +154,9 @@ export function parseLodgeDate(value: string): Date {
 
 function serializeLodgeDetail(lodge: OtherLodgeRecord): SerializedLodgeDetail {
   return {
-    siteUrl: lodge.siteUrl,
-    bookingPath: lodge.bookingPath,
-    requiresLodgeCustodian: lodge.requiresLodgeCustodian,
-    freeWifi: lodge.freeWifi,
-    quietRoom: lodge.quietRoom,
-    dryingRoom: lodge.dryingRoom,
-    sharedKitchen: lodge.sharedKitchen,
-    wheelchairAccessible: lodge.wheelchairAccessible,
-    breakfastIncluded: lodge.breakfastIncluded,
-    lunchIncluded: lodge.lunchIncluded,
-    dinnerIncluded: lodge.dinnerIncluded,
-    cancellationPeriod: lodge.cancellationPeriod,
-    winterSeasonStart: formatLodgeDate(lodge.winterSeasonStart),
-    summerSeasonStart: formatLodgeDate(lodge.summerSeasonStart),
+    ...forKeys(LODGE_TEXT_FIELDS, (key) => lodge[key]),
+    ...forKeys(LODGE_BOOLEAN_FIELDS, (key) => lodge[key]),
+    ...forKeys(LODGE_DATE_FIELDS, (key) => formatLodgeDate(lodge[key])),
     amenities: lodge.amenities.map((a) => ({
       name: a.name,
       description: a.description,
@@ -366,13 +385,33 @@ export const amenitiesInputSchema = z
  * upload item so all three accept exactly the same values. Every one is
  * optional: omitted means "leave as it is" on an update.
  */
+/** Column width of each text detail field; a missing key is a type error. */
+const LODGE_TEXT_FIELD_MAX: Record<LodgeTextField, number> = {
+  siteUrl: 500,
+  bookingPath: 300,
+  cancellationPeriod: 200,
+};
+
+/**
+ * The detail fields, shared by the admin create/update schemas and the club
+ * upload item so all three accept exactly the same values. Every one is
+ * optional: omitted means "leave as it is" on an update.
+ *
+ * The boolean and date entries are derived from their lists. The three text
+ * entries are written out because each has its own rule (the site URL is an
+ * address, the other two plain text with their own widths), and KEY ORDER IS
+ * PART OF THE CONTRACT FINGERPRINT — the JSON Schema of the upload shape is
+ * hashed as emitted — so the order here (text, booleans, text, dates,
+ * amenities) must not change. The `satisfies` below is what turns a detail
+ * field missing from, or foreign to, this shape into a type error.
+ */
 export const lodgeDetailShape = {
   siteUrl: z.preprocess(
     blankToNull,
     z
       .string()
       .trim()
-      .max(500)
+      .max(LODGE_TEXT_FIELD_MAX.siteUrl)
       .refine(
         isSafeHttpUrl,
         "Site URL must start with http:// or https:// and name only a host and path",
@@ -380,40 +419,23 @@ export const lodgeDetailShape = {
       .nullable()
       .optional(),
   ),
-  bookingPath: lineText(300).nullable().optional(),
-  requiresLodgeCustodian: z.boolean().optional(),
-  freeWifi: z.boolean().optional(),
-  quietRoom: z.boolean().optional(),
-  dryingRoom: z.boolean().optional(),
-  sharedKitchen: z.boolean().optional(),
-  wheelchairAccessible: z.boolean().optional(),
-  breakfastIncluded: z.boolean().optional(),
-  lunchIncluded: z.boolean().optional(),
-  dinnerIncluded: z.boolean().optional(),
-  cancellationPeriod: lineText(200).nullable().optional(),
-  winterSeasonStart: dateOnlyField,
-  summerSeasonStart: dateOnlyField,
+  bookingPath: lineText(LODGE_TEXT_FIELD_MAX.bookingPath).nullable().optional(),
+  ...forKeys(LODGE_BOOLEAN_FIELDS, () => z.boolean().optional()),
+  cancellationPeriod: lineText(LODGE_TEXT_FIELD_MAX.cancellationPeriod)
+    .nullable()
+    .optional(),
+  ...forKeys(LODGE_DATE_FIELDS, () => dateOnlyField),
   /** When present, REPLACES the lodge's whole amenity set. */
   amenities: amenitiesInputSchema.optional(),
-};
+} satisfies Record<LodgeDetailField | "amenities", z.ZodType>;
 
-type BooleanFieldKey = (typeof LODGE_BOOLEAN_FIELDS)[number];
+type LodgeDetailInput = { [K in LodgeTextField]?: string | null } & {
+  [K in LodgeBooleanField]?: boolean;
+} & { [K in LodgeDateField]?: string | null };
 
-type LodgeDetailInput = {
-  siteUrl?: string | null;
-  bookingPath?: string | null;
-  cancellationPeriod?: string | null;
-  winterSeasonStart?: string | null;
-  summerSeasonStart?: string | null;
-} & { [K in BooleanFieldKey]?: boolean };
-
-export type LodgeDetailColumns = {
-  siteUrl?: string | null;
-  bookingPath?: string | null;
-  cancellationPeriod?: string | null;
-  winterSeasonStart?: Date | null;
-  summerSeasonStart?: Date | null;
-} & { [K in BooleanFieldKey]?: boolean };
+export type LodgeDetailColumns = { [K in LodgeTextField]?: string | null } & {
+  [K in LodgeBooleanField]?: boolean;
+} & { [K in LodgeDateField]?: Date | null };
 
 /**
  * The Prisma column values for whichever detail fields were PROVIDED — a key
