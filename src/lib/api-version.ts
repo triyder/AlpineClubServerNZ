@@ -18,7 +18,7 @@
  * than `1.1`, and as floating-point numbers they are equal. Every comparison in
  * the server goes through `apiVersionsMatch`, which is the one home for the rule.
  */
-export const SERVER_API_VERSION = "1.2";
+export const SERVER_API_VERSION = "2.0";
 
 /** Header a club sends its own version in; `?clientVersion=` is also accepted. */
 export const CLIENT_API_VERSION_HEADER = "x-client-api-version";

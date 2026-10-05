@@ -1,6 +1,6 @@
 {
   "name": "alpine-club-server-nz",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Central hub connecting AlpineClubBookingsNZ client installations: API access for external services and a web UI for administrative oversight.",
   "private": true,
   "license": "MIT",

@@ -111,11 +111,11 @@ This replicates the AlpineClubBookingsNZ "Other lodges" admin panel, but here it
 is the **shared source of truth**. Admins manage the registry at `/lodges`
 (`/api/admin/other-lodges` CRUD). Connected clubs upload their entries and
 **every** entry is handed back out to every club connected via its API key —
-there is no per-row "distribute" switch (it was removed in API version 1.1;
+there is no per-row "distribute" switch (it was removed before API version 2.0, the first release;
 each club's nightly sync is what carries the registry out). See
 **Distribution loop** under the REST API section below.
 
-#### Lodge details and amenities (API version 1.1)
+#### Lodge details and amenities (API version 2.0)
 
 Besides name, location, booking officer and bed capacity, each lodge holds:
 
@@ -239,7 +239,7 @@ signs the user out to re-authenticate with the new credentials.
 ### API version
 
 The server has one `major.minor` **API version** (`SERVER_API_VERSION` in
-`src/lib/api-version.ts`, currently `1.1`) covering the whole `/api/v1` contract
+`src/lib/api-version.ts`, currently `2.0`) covering the whole `/api/v1` contract
 — other lodges, the message board, push registration and anything added later.
 A club holds the version it was built for and syncs only while the two are
 **identical**; any difference, a minor-only one included, pauses all transfer in
@@ -268,9 +268,14 @@ both directions until the club is upgraded.
   no attempt consumed) until it matches.
 - **Comparing versions:** by integer parts, never as a number — `1.10` is not
   `1.1`. Canonical form only (`1.0`, not `01.0` or `1.00`).
-- **History:** `1.0` — the first versioned contract. `1.1` — lodge detail fields
-  and amenities, and every lodge distributed. `1.2` — the pull also returns
-  `ownLodgeNames` (additive, but any bump pauses clubs until upgraded).
+- **History:** `2.0` is the first RELEASED contract. It includes everything built
+  in the pre-release versions: `1.0` (the version check itself), `1.1` (lodge
+  detail fields and amenities, and every lodge distributed) and `1.2` (the pull
+  also returns `ownLodgeNames` and never sends a booking officer's phone
+  number). No club ever held `1.x`; their fingerprints stay in
+  `api-contract-fingerprints.json` as a record, and `2.0` carries the same
+  fingerprint as `1.2` because the contract itself did not change when the
+  number was raised to mark the release.
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
