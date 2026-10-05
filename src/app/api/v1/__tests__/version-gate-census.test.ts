@@ -51,12 +51,21 @@ describe("version gate census", () => {
       const authCalls = [...source.matchAll(/await authenticateApiRequest\(req\)/g)].length;
       const gateCalls = [...source.matchAll(/await enforceClientApiVersion\(req, auth\.client\)/g)]
         .length;
+      // Calling the gate is not enough: its RESULT is the refusal, and a
+      // handler that dropped it would carry on exactly as if the club matched.
+      const refusalReturns = [
+        ...source.matchAll(/if \(versionRefusal\) return versionRefusal;/g),
+      ].length;
       expect(handlers).toBeGreaterThan(0);
       expect(
         gateCalls,
         `${path} has ${handlers} handler(s) but ${gateCalls} version-gate call(s). A mismatched club would transfer data through the ungated one — add enforceClientApiVersion straight after authentication.`,
       ).toBe(handlers);
       expect(gateCalls).toBe(authCalls);
+      expect(
+        refusalReturns,
+        `${path} calls the gate ${gateCalls} time(s) but returns its refusal ${refusalReturns} time(s). Write it as \`const versionRefusal = await enforceClientApiVersion(req, auth.client); if (versionRefusal) return versionRefusal;\` so the 409 actually leaves the handler.`,
+      ).toBe(handlers);
     });
   }
 });

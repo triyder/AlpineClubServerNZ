@@ -25,10 +25,17 @@ import { clubRegisterSchema, syncSchema } from "@/lib/validation";
  *
  * A club syncs only while its API version equals this server's, so the version
  * is only worth anything if it moves when the contract does. This test
- * fingerprints every `/api/v1` surface a club can see — which routes exist with
- * which methods, every accepted request schema, and the exact keys of what the
- * server sends back — and fails when the fingerprint stops matching the one
- * recorded for the current version.
+ * fingerprints EXACTLY: which `/api/v1` routes exist with which methods, the
+ * JSON Schema of every accepted request schema (`.refine` rules are invisible
+ * to it, so a validation rule can tighten without a bump), and the keys of the
+ * shapes built by the shared serialisers — a distributed lodge, the lodge pull
+ * envelope and a client post. It fails when the fingerprint stops matching
+ * the one recorded for the current version.
+ *
+ * It does NOT see a body a route builds inline (`/feed`, `/feed/sync`,
+ * `/version`, `/push-target`) or the sync entry wrapper; those are pinned as
+ * literal key structures in
+ * `src/app/api/v1/__tests__/contract-response-bodies.test.ts`.
  *
  * WHEN IT FAILS. You changed a v1 request or response shape. Bump
  * SERVER_API_VERSION, then add the NEW fingerprint (printed below) under the NEW
