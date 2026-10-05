@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { ConsoleShell } from "@/components/console-shell";
 import { TokenGenerator } from "@/components/token-generator";
+import { ClubApiVersion } from "@/components/club-api-version";
 import {
   ClubLodgesSelect,
   type ClubLodgeOption,
@@ -121,6 +122,13 @@ export default async function ClubsPage() {
                         </Button>
                       </form>
                     </div>
+                  ) : null}
+
+                  {club.status === "APPROVED" ? (
+                    <ClubApiVersion
+                      reported={club.lastReportedApiVersion}
+                      checkedAt={club.lastVersionCheckAt}
+                    />
                   ) : null}
 
                   {club.status === "APPROVED" ? (

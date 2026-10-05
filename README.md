@@ -211,7 +211,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/login`     | public        | Email + password sign-in.                                      |
 | `/register`  | public        | Lodge submits a link request.                                  |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
-| `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager). |
+| `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager), and see the **API version each club last reported** — up to date, behind (its site must be upgraded), newer than this server, or not reported — with when it last checked. |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |
 | `/admin/image-manager` | admin/manager | **Image manager** — upload pictures and logos, rename them, delete the ones no lodge uses. See below. |
 | `/issues`    | admin/manager | **Issues** — conditions that need a person to look at them, starting with clubs whose API version differs from this server's. An issue stays until it is flagged as cleared. |
