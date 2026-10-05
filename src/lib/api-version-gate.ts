@@ -4,9 +4,14 @@ import { clientIp, type AuthenticatedClient } from "@/lib/api-auth";
 import {
   SERVER_API_VERSION,
   apiVersionsMatch,
+  describeDeclaredVersion,
+  invalidClientApiVersionBody,
   readClientApiVersion,
+  readRawClientApiVersion,
 } from "@/lib/api-version";
 import {
+  allowVersionRecording,
+  auditInvalidVersion,
   auditVersionMismatch,
   recordVersionMismatch,
   stampReportedVersion,
@@ -21,6 +26,11 @@ import {
  * version check cannot send one, and refusing it would take the network down on
  * deploy; such a club is caught the moment it is upgraded and checks.
  *
+ * The refusals run BEFORE any route's own rate limiter, so what they write
+ * (the club stamp, the issue, the audit row) is bounded here, per token, by
+ * `allowVersionRecording`. Over that allowance the request is still refused
+ * with the same status; only the recording is skipped.
+ *
  * Returns the response to send, or `null` to carry on. Kept in one place so a
  * route cannot decide the rule differently from the others.
  */
@@ -32,28 +42,36 @@ export async function enforceClientApiVersion(
   if (declared === null) return null;
 
   if (declared === undefined) {
-    return NextResponse.json(
-      {
-        error: "Invalid client API version",
-        code: "API_VERSION_INVALID",
-        serverVersion: SERVER_API_VERSION,
-      },
-      { status: 400 },
-    );
+    if (allowVersionRecording(client.token.id)) {
+      await auditInvalidVersion({
+        clubId: client.club.id,
+        tokenId: client.token.id,
+        ipAddress: clientIp(req),
+        userAgent: req.headers.get("user-agent"),
+        declared: describeDeclaredVersion(readRawClientApiVersion(req) ?? ""),
+        path: new URL(req.url).pathname,
+      });
+    }
+    return NextResponse.json(invalidClientApiVersionBody(), { status: 400 });
   }
 
-  await stampReportedVersion(client.club, declared);
-  if (apiVersionsMatch(declared, SERVER_API_VERSION)) return null;
+  if (apiVersionsMatch(declared, SERVER_API_VERSION)) {
+    await stampReportedVersion(client.club, declared);
+    return null;
+  }
 
-  await recordVersionMismatch({ clubId: client.club.id, clientVersion: declared });
-  await auditVersionMismatch({
-    clubId: client.club.id,
-    tokenId: client.token.id,
-    ipAddress: clientIp(req),
-    userAgent: req.headers.get("user-agent"),
-    clientVersion: declared,
-    path: new URL(req.url).pathname,
-  });
+  if (allowVersionRecording(client.token.id)) {
+    await stampReportedVersion(client.club, declared);
+    await recordVersionMismatch({ clubId: client.club.id, clientVersion: declared });
+    await auditVersionMismatch({
+      clubId: client.club.id,
+      tokenId: client.token.id,
+      ipAddress: clientIp(req),
+      userAgent: req.headers.get("user-agent"),
+      clientVersion: declared,
+      path: new URL(req.url).pathname,
+    });
+  }
   return NextResponse.json(
     {
       error:

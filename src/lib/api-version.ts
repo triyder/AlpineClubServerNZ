@@ -50,15 +50,50 @@ export function apiVersionsMatch(a: unknown, b: unknown): boolean {
   return left.major === right.major && left.minor === right.minor;
 }
 
+/** The raw declared version, exactly as sent, or `null` when none was sent. */
+export function readRawClientApiVersion(req: Request): string | null {
+  return (
+    req.headers.get(CLIENT_API_VERSION_HEADER) ??
+    new URL(req.url).searchParams.get("clientVersion")
+  );
+}
+
 /**
  * The version a request declares, or `null` when it declares none.
  * `undefined` means it declared something that is not a valid version.
  */
 export function readClientApiVersion(req: Request): string | null | undefined {
-  const raw =
-    req.headers.get(CLIENT_API_VERSION_HEADER) ??
-    new URL(req.url).searchParams.get("clientVersion");
+  const raw = readRawClientApiVersion(req);
   if (raw === null) return null;
   const trimmed = raw.trim();
   return parseApiVersion(trimmed) ? trimmed : undefined;
+}
+
+/** Longest malformed declared value kept in an audit row. */
+export const DECLARED_VERSION_AUDIT_MAX = 64;
+
+/**
+ * A malformed declared version as it is written to the audit log: control
+ * characters stripped and the length capped, so a hostile header cannot put a
+ * terminal escape or a megabyte into a row an administrator reads.
+ */
+export function describeDeclaredVersion(raw: string): string {
+  return raw
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
+    .slice(0, DECLARED_VERSION_AUDIT_MAX);
+}
+
+export const API_VERSION_INVALID_CODE = "API_VERSION_INVALID";
+
+/**
+ * The one 400 body for a malformed declared version, shared by the gate and by
+ * `GET /api/v1/version` so the two cannot answer the same mistake differently.
+ * `serverVersion` is the name the documented 409 mismatch body uses.
+ */
+export function invalidClientApiVersionBody() {
+  return {
+    error: "Invalid client API version",
+    code: API_VERSION_INVALID_CODE,
+    serverVersion: SERVER_API_VERSION,
+  };
 }

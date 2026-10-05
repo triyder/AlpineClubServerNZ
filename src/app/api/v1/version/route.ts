@@ -5,9 +5,14 @@ import { recordAudit } from "@/lib/audit";
 import {
   SERVER_API_VERSION,
   apiVersionsMatch,
+  describeDeclaredVersion,
+  invalidClientApiVersionBody,
   readClientApiVersion,
+  readRawClientApiVersion,
 } from "@/lib/api-version";
 import {
+  allowVersionRecording,
+  auditInvalidVersion,
   auditVersionMismatch,
   recordVersionMismatch,
   stampReportedVersion,
@@ -52,14 +57,19 @@ export async function GET(req: Request) {
 
   const declared = readClientApiVersion(req);
   if (declared === undefined) {
-    return NextResponse.json(
-      {
-        error: "Invalid client API version",
-        code: "API_VERSION_INVALID",
-        version: SERVER_API_VERSION,
-      },
-      { status: 400 },
-    );
+    // Audited like the gate does, under the same per-token allowance, so a
+    // site sending a broken header is visible on /audit rather than silent.
+    if (allowVersionRecording(token.id)) {
+      await auditInvalidVersion({
+        clubId: club.id,
+        tokenId: token.id,
+        ipAddress: ip,
+        userAgent: req.headers.get("user-agent"),
+        declared: describeDeclaredVersion(readRawClientApiVersion(req) ?? ""),
+        path: new URL(req.url).pathname,
+      });
+    }
+    return NextResponse.json(invalidClientApiVersionBody(), { status: 400 });
   }
 
   const match =

@@ -4,8 +4,23 @@ import { enforceClientApiVersion } from "@/lib/api-version-gate";
 import { authenticateApiRequest, clientIp, hasScope } from "@/lib/api-auth";
 import { recordAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { derivePushSecret } from "@/lib/push-delivery";
 import { PushTargetError, validatePushTarget } from "@/lib/push-targets";
+
+function rateLimited(resetAt: number) {
+  return NextResponse.json(
+    { error: "Rate limit exceeded" },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(
+          Math.max(0, Math.ceil((resetAt - Date.now()) / 1000)),
+        ),
+      },
+    },
+  );
+}
 
 /**
  * Where this club wants shared posts pushed to.
@@ -35,6 +50,11 @@ export async function PUT(req: Request) {
   const versionRefusal = await enforceClientApiVersion(req, auth.client);
   if (versionRefusal) return versionRefusal;
   const { club, token } = auth.client;
+
+  // Each PUT resolves the target's address and writes the club row, so it is
+  // limited per token like every other data route.
+  const rl = checkRateLimit(`push-target:${token.id}`);
+  if (!rl.allowed) return rateLimited(rl.resetAt);
 
   // Registering a delivery destination is a write to how this club receives
   // content, so it takes the same scope as writing posts rather than a read
@@ -127,6 +147,9 @@ export async function DELETE(req: Request) {
   const versionRefusal = await enforceClientApiVersion(req, auth.client);
   if (versionRefusal) return versionRefusal;
   const { club, token } = auth.client;
+
+  const rl = checkRateLimit(`push-target:${token.id}`);
+  if (!rl.allowed) return rateLimited(rl.resetAt);
 
   if (!hasScope(token, "posts:write")) {
     return NextResponse.json(
