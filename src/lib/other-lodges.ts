@@ -432,6 +432,12 @@ export type OtherLodgeCreateInput = z.infer<typeof otherLodgeCreateSchema>;
  * Deliberately omits `sourceClub`: a pulling club only needs
  * the lodge data, not which club submitted it or the internal marker. `id` and
  * `updatedAt` let clients dedupe and sync incrementally.
+ *
+ * ALSO OMITS `bookingOfficerPhone`, on purpose (#11). It is a private person's
+ * number, given to one club; sending it in every pull stored it, unseen, in every
+ * other club's database. It is still held here, editable on the Lodges screen and
+ * accepted on upload — it is just not handed out. A club never needs it back:
+ * it holds its own lodge's number locally.
  */
 export interface DistributedOtherLodge extends SerializedLodgeDetail {
   id: string;
@@ -439,7 +445,6 @@ export interface DistributedOtherLodge extends SerializedLodgeDetail {
   location: string | null;
   bookingOfficerName: string | null;
   bookingOfficerEmail: string | null;
-  bookingOfficerPhone: string | null;
   bedCapacity: number | null;
   updatedAt: string;
 }
@@ -453,7 +458,6 @@ export function serializeOtherLodgeForClient(
     location: lodge.location,
     bookingOfficerName: lodge.bookingOfficerName,
     bookingOfficerEmail: lodge.bookingOfficerEmail,
-    bookingOfficerPhone: lodge.bookingOfficerPhone,
     bedCapacity: lodge.bedCapacity,
     ...serializeLodgeDetail(lodge),
     updatedAt: lodge.updatedAt.toISOString(),

@@ -232,7 +232,7 @@ signs the user out to re-authenticate with the new credentials.
 | `POST /api/v1/clubs/register`| none (rate-limited) | Request linking. Creates a `PENDING` club. |
 | `POST /api/v1/sync`          | Bearer token | Push/pull sync batch for an approved club. |
 | `POST /api/v1/other-lodges`  | Bearer token (`lodges:write`) | Upload the club's "Other lodges" entries. |
-| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry, plus `ownLodgeNames`: the lodges this club owns. |
+| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry, plus `ownLodgeNames`: the lodges this club owns. **A booking officer's phone number is never sent** (see below). |
 | `GET  /api/v1/version`       | Bearer token (any approved club) | The server's **API version**, and whether the caller's matches. See below. |
 | `GET  /api/health`           | none        | Liveness + DB connectivity probe.          |
 
@@ -277,6 +277,17 @@ both directions until the club is upgraded.
   (`src/lib/__tests__/api-contract.test.ts`) fingerprints the v1 surface and
   fails when it changes without a new entry for the new version in
   `src/lib/api-contract-fingerprints.json`; never overwrite an existing entry.
+
+### Booking officer phone numbers are not distributed
+
+A lodge's booking officer name and email are sent to every connected club, but
+the booking officer's **phone number is not**: it is a private person's number,
+given to one club, and sending it in every pull stored it, unseen, in every
+other club's database. The server still holds it, central administrators can
+edit it on the Lodges screen, and a club can still upload its own lodge's
+number; it is just never in a pull response (`bookingOfficerPhone` is absent
+from the club-facing shape, and the contract test fails if it is added back
+without a version change).
 
 ### Distribution loop
 

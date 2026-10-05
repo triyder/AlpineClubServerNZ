@@ -189,7 +189,8 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
     location: null,
     bookingOfficerName: null,
     bookingOfficerEmail: null,
-    bookingOfficerPhone: null,
+    // A stored phone number: it must NOT come out in the client shape (#11).
+    bookingOfficerPhone: "021 555 0100",
     bedCapacity: 10,
     siteUrl: "https://a.example",
     bookingPath: "/book",
@@ -209,6 +210,12 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
     updatedAt: at,
   } as unknown as OtherLodgeRecord;
 
+  it("never includes the booking officer's phone number, even when one is stored (#11)", () => {
+    const out = serializeOtherLodgeForClient(lodge);
+    expect(out).not.toHaveProperty("bookingOfficerPhone");
+    expect(JSON.stringify(out)).not.toContain("021 555 0100");
+  });
+
   it("emits dates as YYYY-MM-DD, booleans as booleans and amenities without ids", () => {
     expect(serializeOtherLodgeForClient(lodge)).toEqual({
       id: "l",
@@ -216,7 +223,6 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
       location: null,
       bookingOfficerName: null,
       bookingOfficerEmail: null,
-      bookingOfficerPhone: null,
       bedCapacity: 10,
       siteUrl: "https://a.example",
       bookingPath: "/book",

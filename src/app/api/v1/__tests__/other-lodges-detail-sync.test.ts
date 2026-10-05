@@ -314,6 +314,22 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
   });
 });
 
+describe("GET /api/v1/other-lodges (pull) does not hand out booking officer phone numbers (#11)", () => {
+  it("leaves a stored phone number out of the response entirely", async () => {
+    findMany.mockImplementation(async (args: { where?: { sourceClubId?: string } }) =>
+      args.where?.sourceClubId !== undefined
+        ? []
+        : [dbRow({ bookingOfficerName: "Sam", bookingOfficerPhone: "021 555 0100" })],
+    );
+    const res = await GET(req("GET"));
+    const text = await res.text();
+    expect(text).not.toContain("021 555 0100");
+    expect(text).not.toContain("bookingOfficerPhone");
+    // The rest of the officer's details still go out.
+    expect(JSON.parse(text).lodges[0].bookingOfficerName).toBe("Sam");
+  });
+});
+
 describe("POST /api/v1/other-lodges (upload) updates only the club's own lodges", () => {
   it("skips a lodge owned centrally (no owner), changing nothing", async () => {
     findUnique.mockResolvedValue(dbRow({ sourceClubId: null }));
