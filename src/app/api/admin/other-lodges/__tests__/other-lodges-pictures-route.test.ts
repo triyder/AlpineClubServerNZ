@@ -39,7 +39,12 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   bookingOfficerPhone: null,
   bedCapacity: null,
   siteUrl: null,
-  bookingPath: null,
+  doubleBeds: null,
+  singleBeds: null,
+  minutesWalkToLodge: null,
+  roomType: null,
+  skiWorkshopArea: false,
+  gamesRoom: false,
   requiresLodgeCustodian: false,
   freeWifi: false,
   quietRoom: false,
@@ -153,7 +158,10 @@ describe("choosing a lodge's picture and logo — update", () => {
     imageFindMany.mockResolvedValue([{ id: "img1", kind: "IMAGE" }]);
     const res = await PATCH(jsonReq("PATCH", { imageId: "img1" }), ctx);
     expect(res.status).toBe(200);
-    expect(update.mock.calls[0][0].data).toEqual({ image: { connect: { id: "img1" } } });
+    expect(update.mock.calls[0][0].data).toEqual({
+      image: { connect: { id: "img1" } },
+      lastUpdatedByClub: { disconnect: true }, lastUploadedAt: null,
+    });
   });
 
   it("null clears the picture and does not query the library", async () => {
@@ -162,6 +170,7 @@ describe("choosing a lodge's picture and logo — update", () => {
     expect(update.mock.calls[0][0].data).toEqual({
       image: { disconnect: true },
       logo: { disconnect: true },
+      lastUpdatedByClub: { disconnect: true }, lastUploadedAt: null,
     });
     expect(imageFindMany).not.toHaveBeenCalled();
   });

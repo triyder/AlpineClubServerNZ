@@ -58,7 +58,12 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   bookingOfficerPhone: null,
   bedCapacity: 24,
   siteUrl: null,
-  bookingPath: null,
+  doubleBeds: null,
+  singleBeds: null,
+  minutesWalkToLodge: null,
+  roomType: null,
+  skiWorkshopArea: false,
+  gamesRoom: false,
   requiresLodgeCustodian: false,
   freeWifi: false,
   quietRoom: false,
@@ -247,7 +252,7 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
         lodges: [
           { name: "Fine Lodge", location: "Here" },
           { name: "Bad\u0000 Lodge" },
-          { name: "Also Fine", bookingPath: "ok" },
+          { name: "Also Fine", cancellationPeriod: "ok" },
         ],
       }),
     );

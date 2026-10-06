@@ -10,6 +10,7 @@ import {
   isSafeHttpUrl,
   LODGE_BOOLEAN_FIELDS,
   LODGE_DATE_FIELDS,
+  LODGE_INT_FIELDS,
   LODGE_TEXT_FIELDS,
   lodgeDetailColumns,
   lodgeDetailDiffers,
@@ -68,8 +69,6 @@ describe("detail field validation (create, update and upload accept the same val
       });
 
       it("enforces text length caps", () => {
-        expect(ok(schema, { ...base, bookingPath: "x".repeat(300) })).toBe(true);
-        expect(ok(schema, { ...base, bookingPath: "x".repeat(301) })).toBe(false);
         expect(ok(schema, { ...base, cancellationPeriod: "x".repeat(200) })).toBe(true);
         expect(ok(schema, { ...base, cancellationPeriod: "x".repeat(201) })).toBe(false);
       });
@@ -90,7 +89,6 @@ describe("detail field validation (create, update and upload accept the same val
           "location",
           "bookingOfficerName",
           "bookingOfficerPhone",
-          "bookingPath",
           "cancellationPeriod",
         ];
         for (const field of fields) {
@@ -214,12 +212,12 @@ describe("the detail-field lists are the single source", () => {
 
   it("the validation shape carries exactly the listed fields plus amenities", () => {
     expect(Object.keys(lodgeDetailShape).sort()).toEqual(
-      [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, "amenities"].sort(),
+      [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, ...LODGE_INT_FIELDS, "roomType", "amenities"].sort(),
     );
   });
 
   it("the Prisma select carries every listed field", () => {
-    for (const key of [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS]) {
+    for (const key of [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, ...LODGE_INT_FIELDS, "roomType" as const]) {
       expect(otherLodgeSelect[key], key).toBe(true);
     }
   });
@@ -232,9 +230,9 @@ describe("lodgeDetailColumns", () => {
   });
 
   it("trims text and folds blank to null", () => {
-    expect(lodgeDetailColumns({ siteUrl: " https://a.example ", bookingPath: "  " })).toEqual({
+    expect(lodgeDetailColumns({ siteUrl: " https://a.example ", cancellationPeriod: "  " })).toEqual({
       siteUrl: "https://a.example",
-      bookingPath: null,
+      cancellationPeriod: null,
     });
   });
 
@@ -316,7 +314,12 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
     bookingOfficerPhone: "021 555 0100",
     bedCapacity: 10,
     siteUrl: "https://a.example",
-    bookingPath: "/book",
+    doubleBeds: 2,
+    singleBeds: 6,
+    minutesWalkToLodge: 5,
+    roomType: "DORMITORY",
+    skiWorkshopArea: true,
+    gamesRoom: false,
     requiresLodgeCustodian: true,
     freeWifi: true,
     quietRoom: false,
@@ -348,7 +351,12 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
       bookingOfficerEmail: null,
       bedCapacity: 10,
       siteUrl: "https://a.example",
-      bookingPath: "/book",
+      doubleBeds: 2,
+      singleBeds: 6,
+      minutesWalkToLodge: 5,
+      roomType: "DORMITORY",
+      skiWorkshopArea: true,
+      gamesRoom: false,
       requiresLodgeCustodian: true,
       freeWifi: true,
       quietRoom: false,

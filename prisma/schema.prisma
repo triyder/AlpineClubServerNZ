@@ -235,7 +235,12 @@ model OtherLodge {
   // says otherwise — "not known" and "no" are deliberately not distinguished.
   // The two season dates are calendar dates WITH a year (DATE, no time of day).
   siteUrl              String?   @map("site_url") @db.VarChar(500)
-  bookingPath          String?   @map("booking_path") @db.VarChar(300)
+  doubleBeds           Int?      @map("double_beds")
+  singleBeds           Int?      @map("single_beds")
+  minutesWalkToLodge   Int?      @map("minutes_walk_to_lodge")
+  roomType             LodgeRoomType? @map("room_type")
+  skiWorkshopArea      Boolean   @default(false) @map("ski_workshop_area")
+  gamesRoom            Boolean   @default(false) @map("games_room")
   requiresLodgeCustodian Boolean @default(false) @map("requires_lodge_custodian")
   freeWifi             Boolean   @default(false) @map("free_wifi")
   quietRoom            Boolean   @default(false) @map("quiet_room")
@@ -596,4 +601,12 @@ model Image {
 
   @@index([kind, createdAt])
   @@map("images")
+}
+
+/// Whether a lodge sleeps guests in private rooms or in dormitories.
+enum LodgeRoomType {
+  ROOM
+  DORMITORY
+
+  @@map("lodge_room_type")
 }

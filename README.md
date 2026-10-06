@@ -127,21 +127,22 @@ A lodge **deleted** on this server does not yet reach the clubs: the pull
 carries no tombstones, so a club keeps its copy until that is added (a
 follow-up issue; it will be an API version change).
 
-#### Lodge details and amenities (API version 2.0)
+#### Lodge details and amenities (API version 2.1)
 
 Besides name, location, booking officer and bed capacity, each lodge holds:
 
 | Field | Type | Notes |
 | ----- | ---- | ----- |
-| `siteUrl` | text (500) | Must start with `http://` or `https://` (any case), carry no whitespace, control character or backslash, and name no username or password — it is shown as a link, and the URL parser alone would read `http:\\evil.com` or `https://club.nz@evil.com` as something else. Stored as typed. |
-| `bookingPath` | text (300) | Free text. |
+| `siteUrl` | text (500) | The **non-member booking page URL** (the separate `bookingPath` was removed in 2.1). Must start with `http://` or `https://` (any case), carry no whitespace, control character or backslash, and name no username or password — it is shown as a link, and the URL parser alone would read `http:\\evil.com` or `https://club.nz@evil.com` as something else. Stored as typed. |
+| `doubleBeds`, `singleBeds`, `minutesWalkToLodge` | whole number | Optional, `0`–`100000`. |
+| `roomType` | `ROOM` or `DORMITORY` | Optional (a radio choice on `/lodges`). |
 
 Every text field here, the lodge name, the booking officer's name, email and
 phone, and an amenity's name and description refuse control characters
 (including tab and newline: none is multi-line), so a bad value is a `400`
 before anything is written rather than a database error part-way through an
 upload.
-| `requiresLodgeCustodian`, `freeWifi`, `quietRoom`, `dryingRoom`, `sharedKitchen`, `wheelchairAccessible`, `breakfastIncluded`, `lunchIncluded`, `dinnerIncluded` | yes/no | Default **no**; "not known" and "no" are not distinguished. |
+| `requiresLodgeCustodian`, `freeWifi`, `quietRoom`, `dryingRoom`, `sharedKitchen`, `wheelchairAccessible`, `breakfastIncluded`, `lunchIncluded`, `dinnerIncluded`, `skiWorkshopArea`, `gamesRoom` | yes/no | Default **no**; "not known" and "no" are not distinguished. |
 | `cancellationPeriod` | text (200) | Free text. |
 | `winterSeasonStart`, `summerSeasonStart` | date | A calendar date with a year, `YYYY-MM-DD`; never shifted by time zone. |
 | `amenities` | list | `{ name, description? }`, at most 50 per lodge, names unique ignoring case. |

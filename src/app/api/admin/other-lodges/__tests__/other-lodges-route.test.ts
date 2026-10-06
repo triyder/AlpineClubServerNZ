@@ -46,7 +46,12 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   bookingOfficerPhone: null,
   bedCapacity: null,
   siteUrl: null,
-  bookingPath: null,
+  doubleBeds: null,
+  singleBeds: null,
+  minutesWalkToLodge: null,
+  roomType: null,
+  skiWorkshopArea: false,
+  gamesRoom: false,
   requiresLodgeCustodian: false,
   freeWifi: false,
   quietRoom: false,
@@ -188,8 +193,15 @@ describe("PATCH /api/admin/other-lodges/[id]", () => {
     expect(res.status).toBe(200);
     const arg = update.mock.calls[0][0];
     // Only `bedCapacity` is in the update payload — a partial PATCH.
-    expect(Object.keys(arg.data)).toEqual(["bedCapacity"]);
+    expect(Object.keys(arg.data).sort()).toEqual([
+      "bedCapacity",
+      "lastUpdatedByClub",
+      "lastUploadedAt",
+    ]);
     expect(arg.data.bedCapacity).toBe(12);
+    // An admin edit takes over the "updated by" credit from any club.
+    expect(arg.data.lastUpdatedByClub).toEqual({ disconnect: true });
+    expect(arg.data.lastUploadedAt).toBeNull();
   });
 
   it("rejects the removed distribute field (400)", async () => {
@@ -216,7 +228,7 @@ describe("PATCH /api/admin/other-lodges/[id]", () => {
     update.mockResolvedValue(dbRow({ name: "RUAPEHU Lodge" }));
     const res = await PATCH(jsonReq({ name: "RUAPEHU Lodge" }, "PATCH"), ctx("l1"));
     expect(res.status).toBe(200);
-    expect(update.mock.calls[0][0].data).toEqual({ name: "RUAPEHU Lodge" });
+    expect(update.mock.calls[0][0].data).toMatchObject({ name: "RUAPEHU Lodge" });
   });
 
   it("sending the unchanged name does not read the other names at all", async () => {

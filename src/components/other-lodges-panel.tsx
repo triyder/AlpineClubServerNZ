@@ -46,6 +46,8 @@ const BOOLEAN_FIELD_LABELS: Record<LodgeBooleanField, string> = {
   breakfastIncluded: "Breakfast included",
   lunchIncluded: "Lunch included",
   dinnerIncluded: "Dinner included",
+  skiWorkshopArea: "Ski workshop area",
+  gamesRoom: "Games room",
 };
 
 const BOOLEAN_FIELDS = LODGE_BOOLEAN_FIELDS.map((key) => ({
@@ -63,7 +65,10 @@ type FormState = {
   bookingOfficerPhone: string;
   bedCapacity: string;
   siteUrl: string;
-  bookingPath: string;
+  doubleBeds: string;
+  singleBeds: string;
+  minutesWalkToLodge: string;
+  roomType: "ROOM" | "DORMITORY" | "";
   cancellationPeriod: string;
   winterSeasonStart: string;
   summerSeasonStart: string;
@@ -85,7 +90,10 @@ const emptyForm: FormState = {
   bookingOfficerPhone: "",
   bedCapacity: "",
   siteUrl: "",
-  bookingPath: "",
+  doubleBeds: "",
+  singleBeds: "",
+  minutesWalkToLodge: "",
+  roomType: "",
   cancellationPeriod: "",
   winterSeasonStart: "",
   summerSeasonStart: "",
@@ -104,7 +112,11 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
     bookingOfficerPhone: lodge.bookingOfficerPhone ?? "",
     bedCapacity: lodge.bedCapacity === null ? "" : String(lodge.bedCapacity),
     siteUrl: lodge.siteUrl ?? "",
-    bookingPath: lodge.bookingPath ?? "",
+    doubleBeds: lodge.doubleBeds === null ? "" : String(lodge.doubleBeds),
+    singleBeds: lodge.singleBeds === null ? "" : String(lodge.singleBeds),
+    minutesWalkToLodge:
+      lodge.minutesWalkToLodge === null ? "" : String(lodge.minutesWalkToLodge),
+    roomType: lodge.roomType ?? "",
     cancellationPeriod: lodge.cancellationPeriod ?? "",
     winterSeasonStart: lodge.winterSeasonStart ?? "",
     summerSeasonStart: lodge.summerSeasonStart ?? "",
@@ -123,6 +135,11 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
 // Blank text fields save as null; bed capacity parses to an integer or null.
 // Amenity rows with no name are dropped (an untouched blank row is not an
 // amenity), and the list is always sent so removing the last one clears it.
+function countOrNull(value: string): number | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : Number(trimmed);
+}
+
 function formPayload(form: FormState) {
   const capacity = form.bedCapacity.trim();
   return {
@@ -133,7 +150,10 @@ function formPayload(form: FormState) {
     bookingOfficerPhone: form.bookingOfficerPhone.trim() || null,
     bedCapacity: capacity === "" ? null : Number(capacity),
     siteUrl: form.siteUrl.trim() || null,
-    bookingPath: form.bookingPath.trim() || null,
+    doubleBeds: countOrNull(form.doubleBeds),
+    singleBeds: countOrNull(form.singleBeds),
+    minutesWalkToLodge: countOrNull(form.minutesWalkToLodge),
+    roomType: form.roomType || null,
     cancellationPeriod: form.cancellationPeriod.trim() || null,
     winterSeasonStart: form.winterSeasonStart || null,
     summerSeasonStart: form.summerSeasonStart || null,
@@ -149,6 +169,12 @@ function formPayload(form: FormState) {
     imageId: form.image?.id ?? null,
     logoId: form.logo?.id ?? null,
   };
+}
+
+// dd-mm-yyyy from an ISO timestamp (UTC date part, as the API stores it).
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}-${m}-${y}`;
 }
 
 export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
@@ -215,6 +241,17 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
     if (capacity !== "" && Number(capacity) > 100_000) {
       setError("Bed capacity looks too large. Enter a realistic number.");
       return;
+    }
+    for (const [label, value] of [
+      ["Double beds", form.doubleBeds],
+      ["Single beds", form.singleBeds],
+      ["Minutes walk to lodge", form.minutesWalkToLodge],
+    ] as const) {
+      const v = value.trim();
+      if (v !== "" && (!/^\d+$/.test(v) || Number(v) > 100_000)) {
+        setError(`${label} must be a whole number.`);
+        return;
+      }
     }
     const named = form.amenities.filter((a) => a.name.trim() !== "");
     if (named.length > AMENITIES_PER_LODGE_MAX) {
@@ -400,7 +437,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="ol-site-url">Site URL</Label>
+                <Label htmlFor="ol-site-url">Non-member booking page URL</Label>
                 <Input
                   id="ol-site-url"
                   type="url"
@@ -409,17 +446,6 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                   maxLength={500}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, siteUrl: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ol-booking-path">Booking path</Label>
-                <Input
-                  id="ol-booking-path"
-                  value={form.bookingPath}
-                  maxLength={300}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, bookingPath: e.target.value }))
                   }
                 />
               </div>
@@ -437,7 +463,69 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                   }
                 />
               </div>
-              <div className="hidden sm:block" />
+              <div className="space-y-2">
+                <Label htmlFor="ol-double-beds">Double beds</Label>
+                <Input
+                  id="ol-double-beds"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={form.doubleBeds}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, doubleBeds: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ol-single-beds">Single beds</Label>
+                <Input
+                  id="ol-single-beds"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={form.singleBeds}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, singleBeds: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ol-walk">Minutes walk to lodge</Label>
+                <Input
+                  id="ol-walk"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={form.minutesWalkToLodge}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, minutesWalkToLodge: e.target.value }))
+                  }
+                />
+              </div>
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Room or dormitory</legend>
+                <div className="flex gap-4 pt-1 text-sm">
+                  {(
+                    [
+                      ["ROOM", "Room"],
+                      ["DORMITORY", "Dormitory"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <label key={value} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="ol-room-type"
+                        className="h-4 w-4 accent-[var(--primary)]"
+                        checked={form.roomType === value}
+                        onChange={() =>
+                          setForm((p) => ({ ...p, roomType: value }))
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="space-y-2">
                 <Label htmlFor="ol-winter-start">Winter season start date</Label>
                 <Input
@@ -640,7 +728,37 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                               className="h-8 w-8 object-contain"
                             />
                           ) : null}
-                          <span className="font-medium">{lodge.name}</span>
+                          <span className="group relative">
+                            <span
+                              className="font-medium"
+                              tabIndex={lodge.amenities.length > 0 ? 0 : undefined}
+                            >
+                              {lodge.name}
+                            </span>
+                            {lodge.amenities.length > 0 ? (
+                              <span
+                                role="tooltip"
+                                className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-64 rounded-md border bg-popover p-2 text-xs text-popover-foreground shadow-md group-focus-within:block group-hover:block"
+                              >
+                                <span className="mb-1 block font-semibold">
+                                  Amenities
+                                </span>
+                                <ul className="list-disc space-y-0.5 pl-4">
+                                  {lodge.amenities.map((a) => (
+                                    <li key={a.name}>
+                                      {a.name}
+                                      {a.description ? (
+                                        <span className="text-muted-foreground">
+                                          {" "}
+                                          – {a.description}
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </span>
+                            ) : null}
+                          </span>
                         </div>
                         {lodge.image ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -673,78 +791,23 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                       <TableCell className="text-right tabular-nums">
                         {lodge.bedCapacity ?? "—"}
                       </TableCell>
-                      <TableCell className="max-w-xs text-xs text-muted-foreground">
+                      <TableCell className="max-w-xs break-all text-xs text-muted-foreground">
                         {lodge.siteUrl && /^https?:\/\//i.test(lodge.siteUrl) ? (
-                          <div>
-                            <a
-                              href={lodge.siteUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="underline"
-                            >
-                              {lodge.siteUrl}
-                            </a>
-                            {lodge.bookingPath ? ` · ${lodge.bookingPath}` : ""}
-                          </div>
-                        ) : null}
-                        {BOOLEAN_FIELDS.filter(({ key }) => lodge[key]).length >
-                        0 ? (
-                          <div>
-                            {BOOLEAN_FIELDS.filter(({ key }) => lodge[key])
-                              .map(({ label }) => label)
-                              .join(", ")}
-                          </div>
-                        ) : null}
-                        {lodge.cancellationPeriod ? (
-                          <div>Cancellation: {lodge.cancellationPeriod}</div>
-                        ) : null}
-                        {lodge.winterSeasonStart || lodge.summerSeasonStart ? (
-                          <div>
-                            {lodge.winterSeasonStart
-                              ? `Winter from ${lodge.winterSeasonStart}`
-                              : ""}
-                            {lodge.winterSeasonStart && lodge.summerSeasonStart
-                              ? " · "
-                              : ""}
-                            {lodge.summerSeasonStart
-                              ? `Summer from ${lodge.summerSeasonStart}`
-                              : ""}
-                          </div>
-                        ) : null}
-                        {lodge.amenities.length > 0 ? (
-                          <div title={lodge.amenities.map((a) => a.name).join(", ")}>
-                            {lodge.amenities.length} amenit
-                            {lodge.amenities.length === 1 ? "y" : "ies"}:{" "}
-                            {lodge.amenities.map((a) => a.name).join(", ")}
-                          </div>
-                        ) : null}
-                        {!lodge.siteUrl &&
-                        !lodge.cancellationPeriod &&
-                        !lodge.winterSeasonStart &&
-                        !lodge.summerSeasonStart &&
-                        lodge.amenities.length === 0 &&
-                        BOOLEAN_FIELDS.every(({ key }) => !lodge[key])
-                          ? "—"
-                          : null}
+                          <a
+                            href={lodge.siteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
+                            {lodge.siteUrl}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        <div>
-                          {lodge.sourceClub ? (
-                            <span title={lodge.sourceClub.code}>
-                              {lodge.sourceClub.name}
-                            </span>
-                          ) : (
-                            <span className="text-xs">central</span>
-                          )}
-                          {lodge.lastUpdatedByClub ? (
-                            <div className="text-xs">
-                              updated by {lodge.lastUpdatedByClub.name}
-                              {lodge.lastUploadedAt
-                                ? ` · ${lodge.lastUploadedAt.slice(0, 10)}`
-                                : ""}
-                            </div>
-                          ) : null}
-                        </div>
+                      <TableCell className="text-sm text-muted-foreground">
+                        updated by {lodge.lastUpdatedByClub?.code ?? "admin"} on{" "}
+                        {formatDate(lodge.lastUploadedAt ?? lodge.updatedAt)}
                       </TableCell>
                       {canManage ? (
                         <TableCell>

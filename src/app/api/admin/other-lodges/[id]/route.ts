@@ -122,12 +122,19 @@ export async function PATCH(
     return NextResponse.json({ otherLodge: serializeOtherLodge(existing) });
   }
 
+  // An administrator's edit is now the latest change, so the Source column must
+  // stop crediting the club that last uploaded this lodge.
+  const adminProvenance = {
+    lastUpdatedByClub: { disconnect: true },
+    lastUploadedAt: null,
+  } satisfies Prisma.OtherLodgeUpdateInput;
+
   let updated;
   try {
     if (amenities === undefined || !amenitiesChanged) {
       updated = await prisma.otherLodge.update({
         where: { id: existing.id },
-        data,
+        data: { ...data, ...adminProvenance },
         select: otherLodgeSelect,
       });
     } else {
@@ -141,7 +148,10 @@ export async function PATCH(
       updated = await prisma.$transaction(async (tx) => {
         const scalar: Prisma.OtherLodgeUpdateInput = { ...data };
         if (Object.keys(scalar).length === 0) scalar.updatedAt = new Date();
-        await tx.otherLodge.update({ where: { id: existing.id }, data: scalar });
+        await tx.otherLodge.update({
+          where: { id: existing.id },
+          data: { ...scalar, ...adminProvenance },
+        });
         await replaceAmenities(tx, existing.id, amenities, existing.amenities);
         return tx.otherLodge.findUniqueOrThrow({
           where: { id: existing.id },

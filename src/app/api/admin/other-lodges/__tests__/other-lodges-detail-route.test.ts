@@ -53,7 +53,12 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   bookingOfficerPhone: null,
   bedCapacity: null,
   siteUrl: null,
-  bookingPath: null,
+  doubleBeds: null,
+  singleBeds: null,
+  minutesWalkToLodge: null,
+  roomType: null,
+  skiWorkshopArea: false,
+  gamesRoom: false,
   requiresLodgeCustodian: false,
   freeWifi: false,
   quietRoom: false,
@@ -107,7 +112,9 @@ describe("POST /api/admin/other-lodges with the new fields", () => {
         {
           name: "Ruapehu Lodge",
           siteUrl: " https://ruapehu.example ",
-          bookingPath: "/book",
+          doubleBeds: 2,
+          roomType: "ROOM",
+          gamesRoom: true,
           requiresLodgeCustodian: true,
           freeWifi: true,
           cancellationPeriod: "14 days",
@@ -122,7 +129,9 @@ describe("POST /api/admin/other-lodges with the new fields", () => {
     const data = create.mock.calls[0][0].data;
     expect(data).toMatchObject({
       siteUrl: "https://ruapehu.example",
-      bookingPath: "/book",
+      doubleBeds: 2,
+      roomType: "ROOM",
+      gamesRoom: true,
       requiresLodgeCustodian: true,
       freeWifi: true,
       cancellationPeriod: "14 days",
@@ -154,7 +163,11 @@ describe("PATCH /api/admin/other-lodges/:id with the new fields", () => {
     update.mockResolvedValue(dbRow({ freeWifi: true, bedCapacity: 12 }));
     const res = await PATCH(jsonReq({ bedCapacity: 12 }, "PATCH"), ctx);
     expect(res.status).toBe(200);
-    expect(update.mock.calls[0][0].data).toEqual({ bedCapacity: 12 });
+    expect(update.mock.calls[0][0].data).toEqual({
+      bedCapacity: 12,
+      lastUpdatedByClub: { disconnect: true },
+      lastUploadedAt: null,
+    });
     expect(transaction).not.toHaveBeenCalled();
   });
 

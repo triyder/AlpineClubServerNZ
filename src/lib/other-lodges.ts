@@ -33,10 +33,11 @@ export const LODGE_BOOLEAN_FIELDS = [
   "breakfastIncluded",
   "lunchIncluded",
   "dinnerIncluded",
+  "skiWorkshopArea",
+  "gamesRoom",
 ] as const;
 export const LODGE_TEXT_FIELDS = [
   "siteUrl",
-  "bookingPath",
   "cancellationPeriod",
 ] as const;
 export const LODGE_DATE_FIELDS = [
@@ -44,10 +45,26 @@ export const LODGE_DATE_FIELDS = [
   "summerSeasonStart",
 ] as const;
 
+/** Whole-number detail columns: bed counts and the walk to the lodge. */
+export const LODGE_INT_FIELDS = [
+  "doubleBeds",
+  "singleBeds",
+  "minutesWalkToLodge",
+] as const;
+/** Whether guests sleep in private rooms or dormitories. */
+export const LODGE_ROOM_TYPES = ["ROOM", "DORMITORY"] as const;
+export type LodgeRoomTypeValue = (typeof LODGE_ROOM_TYPES)[number];
+
 export type LodgeBooleanField = (typeof LODGE_BOOLEAN_FIELDS)[number];
 export type LodgeTextField = (typeof LODGE_TEXT_FIELDS)[number];
 export type LodgeDateField = (typeof LODGE_DATE_FIELDS)[number];
-export type LodgeDetailField = LodgeBooleanField | LodgeTextField | LodgeDateField;
+export type LodgeIntField = (typeof LODGE_INT_FIELDS)[number];
+export type LodgeDetailField =
+  | LodgeBooleanField
+  | LodgeTextField
+  | LodgeDateField
+  | LodgeIntField
+  | "roomType";
 
 /** `{ a: value, b: value }` for a list of keys, typed by the key union. */
 function forKeys<K extends string, V>(
@@ -58,7 +75,13 @@ function forKeys<K extends string, V>(
 }
 
 const LODGE_DETAIL_SELECT = forKeys<LodgeDetailField, true>(
-  [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS],
+  [
+    ...LODGE_TEXT_FIELDS,
+    ...LODGE_BOOLEAN_FIELDS,
+    ...LODGE_DATE_FIELDS,
+    ...LODGE_INT_FIELDS,
+    "roomType",
+  ],
   () => true,
 );
 
@@ -137,7 +160,9 @@ export interface LodgeAmenity {
  */
 export type SerializedLodgeDetail = { [K in LodgeTextField]: string | null } & {
   [K in LodgeBooleanField]: boolean;
-} & { [K in LodgeDateField]: string | null } & { amenities: LodgeAmenity[] };
+} & { [K in LodgeDateField]: string | null } & {
+  [K in LodgeIntField]: number | null;
+} & { roomType: LodgeRoomTypeValue | null } & { amenities: LodgeAmenity[] };
 
 /** `YYYY-MM-DD` for a DATE column (read back as UTC midnight), or null. */
 export function formatLodgeDate(date: Date | null): string | null {
@@ -157,6 +182,8 @@ function serializeLodgeDetail(lodge: OtherLodgeRecord): SerializedLodgeDetail {
     ...forKeys(LODGE_TEXT_FIELDS, (key) => lodge[key]),
     ...forKeys(LODGE_BOOLEAN_FIELDS, (key) => lodge[key]),
     ...forKeys(LODGE_DATE_FIELDS, (key) => formatLodgeDate(lodge[key])),
+    ...forKeys(LODGE_INT_FIELDS, (key) => lodge[key]),
+    roomType: lodge.roomType,
     amenities: lodge.amenities.map((a) => ({
       name: a.name,
       description: a.description,
@@ -385,10 +412,18 @@ export const amenitiesInputSchema = z
  * upload item so all three accept exactly the same values. Every one is
  * optional: omitted means "leave as it is" on an update.
  */
+/** A non-negative whole number, or null for "not set". */
+const lodgeCountField = z
+  .number()
+  .int()
+  .min(0)
+  .max(100000)
+  .nullable()
+  .optional();
+
 /** Column width of each text detail field; a missing key is a type error. */
 const LODGE_TEXT_FIELD_MAX: Record<LodgeTextField, number> = {
   siteUrl: 500,
-  bookingPath: 300,
   cancellationPeriod: 200,
 };
 
@@ -414,12 +449,13 @@ export const lodgeDetailShape = {
       .max(LODGE_TEXT_FIELD_MAX.siteUrl)
       .refine(
         isSafeHttpUrl,
-        "Site URL must start with http:// or https:// and name only a host and path",
+        "Booking page URL must start with http:// or https:// and name only a host and path",
       )
       .nullable()
       .optional(),
   ),
-  bookingPath: lineText(LODGE_TEXT_FIELD_MAX.bookingPath).nullable().optional(),
+  ...forKeys(LODGE_INT_FIELDS, () => lodgeCountField),
+  roomType: z.enum(LODGE_ROOM_TYPES).nullable().optional(),
   ...forKeys(LODGE_BOOLEAN_FIELDS, () => z.boolean().optional()),
   cancellationPeriod: lineText(LODGE_TEXT_FIELD_MAX.cancellationPeriod)
     .nullable()
@@ -431,11 +467,15 @@ export const lodgeDetailShape = {
 
 type LodgeDetailInput = { [K in LodgeTextField]?: string | null } & {
   [K in LodgeBooleanField]?: boolean;
-} & { [K in LodgeDateField]?: string | null };
+} & { [K in LodgeDateField]?: string | null } & {
+  [K in LodgeIntField]?: number | null;
+} & { roomType?: LodgeRoomTypeValue | null };
 
 export type LodgeDetailColumns = { [K in LodgeTextField]?: string | null } & {
   [K in LodgeBooleanField]?: boolean;
-} & { [K in LodgeDateField]?: Date | null };
+} & { [K in LodgeDateField]?: Date | null } & {
+  [K in LodgeIntField]?: number | null;
+} & { roomType?: LodgeRoomTypeValue | null };
 
 /**
  * The Prisma column values for whichever detail fields were PROVIDED — a key
@@ -452,6 +492,10 @@ export function lodgeDetailColumns(input: LodgeDetailInput): LodgeDetailColumns 
   for (const key of LODGE_BOOLEAN_FIELDS) {
     if (input[key] !== undefined) data[key] = input[key];
   }
+  for (const key of LODGE_INT_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
+  if (input.roomType !== undefined) data.roomType = input.roomType;
   for (const key of LODGE_DATE_FIELDS) {
     const value = input[key];
     if (value !== undefined) data[key] = value ? parseLodgeDate(value) : null;
