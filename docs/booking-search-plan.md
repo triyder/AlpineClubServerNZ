@@ -6,8 +6,9 @@ and is sent to the lodge's own booking site to make the actual booking. This
 server never takes a booking.
 
 Status: **Phase A done** (rates, API 2.2). **Phase B done** (public `/book`
-page; every lodge shows "beds available unknown" until Phase D). Phases C–E
-not started.
+page; every lodge shows "beds available unknown" until Phase D). **Phase C**
+issues filed in the booking app (#61, #62); not started. Phases D–E not
+started.
 
 ---
 
@@ -111,24 +112,39 @@ next winter start. A stay that crosses a boundary is priced night by night. If
 a lodge has no season dates, or the needed rate is empty, the expanded row shows
 both rate sets and no estimated total.
 
-## Phase C — Availability endpoint (AlpineClubBookingsNZ)
+## Phase C — Booking app (AlpineClubBookingsNZ)
 
 Not every lodge uses the booking app; this phase only matters for those that
-do. The others show "beds available unknown".
+do. The others show "beds available unknown". Tracked as two issues in that
+repo, which follows its own issue / branch / PR process:
 
-17. **Endpoint** `GET /api/central/availability?lodge=<name>&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- [triyder/AlpineClubBookingsNZ#61](https://github.com/triyder/AlpineClubBookingsNZ/issues/61)
+  — non-member rates in its Other lodges (stored as integer cents, edited for
+  owned lodges, uploaded and pulled) and server API **2.2**. Without it every
+  club stays paused against this server.
+- [triyder/AlpineClubBookingsNZ#62](https://github.com/triyder/AlpineClubBookingsNZ/issues/62)
+  — the availability endpoint below and the lodge link.
+
+**Lodge link.** The booking app's own `Lodge` records are not the central
+registry names. Each active `Lodge` gets a **Central lodge** setting chosen
+from the names the club owns; a club with one active lodge that owns one name
+is linked without setup.
+
+17. **Endpoint** `GET /api/webhooks/servernz-availability?lodge=<name>&from=YYYY-MM-DD&to=YYYY-MM-DD`
+    (beside the push receiver, at the push URL's origin)
     — answers `{ lodge, from, to, freeBeds }`, where `freeBeds` is the
     **minimum** free beds across every night of the stay, computed with the
     existing `src/lib/capacity.ts` (holds, whole-lodge bookings and closed
     nights included). Read-only; returns a number, never booking or member
     detail.
-18. **Authentication** — no member session. The server signs each request
-    (HMAC over method, path, query and a timestamp) with the club's push
-    secret, which the club already holds from registering its push target.
-    The booking app refuses an unsigned, wrongly signed or stale (> 60 s)
-    request.
-19. **Lodge matching** — by **name**, against the lodges this club owns (the
-    `ownLodgeNames` list from the pull). An unknown or unowned name is a `404`.
+18. **Authentication** — no member session. The server signs
+    `${timestamp}.GET ${path}?${query}` with HMAC-SHA256 and the club's push
+    secret (`X-Acs-Timestamp`, `X-Acs-Signature`), the push receiver's scheme.
+    The booking app refuses an unsigned, wrongly signed or stale (> 5 min)
+    request. A club without the Communication Portal has no secret and shows
+    "beds available unknown" — accepted.
+19. **Lodge matching** — the central name is resolved through the Central
+    lodge setting (above). An unknown, unowned or unlinked name is a `404`.
 20. **Guards** — stay length capped (e.g. 30 nights), rate-limited, fast
     (target well under the server's timeout).
 21. **Tests** — signature checks, minimum-across-nights, unknown lodge, date
