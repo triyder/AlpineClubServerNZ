@@ -5,7 +5,9 @@ enters dates and a guest count, filters by facilities, sees the lodges that fit,
 and is sent to the lodge's own booking site to make the actual booking. This
 server never takes a booking.
 
-Status: **Phase A done** (rates, API 2.2). Phases B–E not started.
+Status: **Phase A done** (rates, API 2.2). **Phase B done** (public `/book`
+page; every lodge shows "beds available unknown" until Phase D). Phases C–E
+not started.
 
 ---
 

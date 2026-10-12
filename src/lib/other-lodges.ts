@@ -36,6 +36,27 @@ export const LODGE_BOOLEAN_FIELDS = [
   "skiWorkshopArea",
   "gamesRoom",
 ] as const;
+/**
+ * A label for EVERY boolean detail field, shown on the Edit Lodge popup and as
+ * the public search's facility filter. `Record` over the key type, so a field
+ * added to the list without a label is a type error.
+ */
+export const LODGE_FACILITY_LABELS: Record<
+  (typeof LODGE_BOOLEAN_FIELDS)[number],
+  string
+> = {
+  requiresLodgeCustodian: "Requires lodge custodian",
+  freeWifi: "Free wifi",
+  quietRoom: "Quiet room",
+  dryingRoom: "Drying room",
+  sharedKitchen: "Shared kitchen",
+  wheelchairAccessible: "Wheelchair accessible",
+  breakfastIncluded: "Breakfast included",
+  lunchIncluded: "Lunch included",
+  dinnerIncluded: "Dinner included",
+  skiWorkshopArea: "Ski workshop area",
+  gamesRoom: "Games room",
+};
 export const LODGE_TEXT_FIELDS = [
   "siteUrl",
   "cancellationPeriod",

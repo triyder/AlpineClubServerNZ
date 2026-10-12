@@ -19,8 +19,11 @@ export default async function HomePage() {
           connection.
         </p>
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
         <Button asChild>
+          <Link href="/book">Find a lodge</Link>
+        </Button>
+        <Button asChild variant="outline">
           <Link href="/login">Admin sign in</Link>
         </Button>
         <Button asChild variant="outline">

@@ -28,6 +28,7 @@ import {
   AMENITY_DESCRIPTION_MAX,
   AMENITY_NAME_MAX,
   LODGE_BOOLEAN_FIELDS,
+  LODGE_FACILITY_LABELS,
   LODGE_NAME_MAX,
   LODGE_RATE_FIELDS,
   LODGE_RATE_MAX,
@@ -36,26 +37,9 @@ import {
   type SerializedOtherLodge,
 } from "@/lib/other-lodges";
 
-// A label for EVERY boolean detail field: `Record` over the field list's key
-// type, so a field added to the list without a label here is a type error (a
-// `satisfies` on an array would only catch an extra key, never a missing one).
-const BOOLEAN_FIELD_LABELS: Record<LodgeBooleanField, string> = {
-  requiresLodgeCustodian: "Requires lodge custodian",
-  freeWifi: "Free wifi",
-  quietRoom: "Quiet room",
-  dryingRoom: "Drying room",
-  sharedKitchen: "Shared kitchen",
-  wheelchairAccessible: "Wheelchair accessible",
-  breakfastIncluded: "Breakfast included",
-  lunchIncluded: "Lunch included",
-  dinnerIncluded: "Dinner included",
-  skiWorkshopArea: "Ski workshop area",
-  gamesRoom: "Games room",
-};
-
 const BOOLEAN_FIELDS = LODGE_BOOLEAN_FIELDS.map((key) => ({
   key,
-  label: BOOLEAN_FIELD_LABELS[key],
+  label: LODGE_FACILITY_LABELS[key],
 }));
 
 // The rate grid: a row per season, a column per guideline age group. Typed

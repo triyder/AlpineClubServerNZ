@@ -233,6 +233,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | ------------ | ------------- | -------------------------------------------------------------- |
 | `/login`     | public        | Email + password sign-in.                                      |
 | `/register`  | public        | Lodge submits a link request.                                  |
+| `/book`      | public        | **Find a lodge** — guests search the registry by dates, guests (under 5 / 5–11 / 12–17 / 18+) and facilities, expand a lodge for its amenities, non-member rates and an estimated total, and press **Book now** to go to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). This server never makes a booking. Shows only public lodge fields; rate-limited per IP. |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager), and see the **API version each club last reported** — up to date, behind (its site must be upgraded), newer than this server, or not reported — with when it last checked. |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |

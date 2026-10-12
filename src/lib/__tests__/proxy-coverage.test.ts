@@ -16,8 +16,12 @@ import { config } from "@/proxy";
 
 const APP_ROOT = join(process.cwd(), "src", "app");
 
-/** Pages that must be reachable without a session. */
-const PUBLIC_PAGES = new Set(["/", "/login", "/register"]);
+/**
+ * Pages that must be reachable without a session. `/book` is the public lodge
+ * search for guests (its "Book now" redirect, `/book/go/:id`, is a route
+ * handler and not a page).
+ */
+const PUBLIC_PAGES = new Set(["/", "/login", "/register", "/book"]);
 
 function pageRoutes(dir: string, prefix = ""): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -53,6 +57,12 @@ describe("proxy session gate coverage", () => {
       ).toBe(true);
     });
   }
+
+  it("leaves the public lodge search ungated", () => {
+    expect(routes).toContain("/book");
+    expect(isMatched("/book")).toBe(false);
+    expect(isMatched("/book/go/abc")).toBe(false);
+  });
 
   it("covers the image manager and the issues screen explicitly", () => {
     expect(isMatched("/admin/image-manager")).toBe(true);
