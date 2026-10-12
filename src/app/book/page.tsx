@@ -14,7 +14,7 @@ import {
   type RawSearchParams,
 } from "@/lib/lodge-search";
 import { FacilityFilter, SearchBar } from "@/components/book/search-form";
-import { LodgeResultRow } from "@/components/book/lodge-result-row";
+import { LodgeResults } from "@/components/book/lodge-results";
 
 /**
  * PUBLIC booking search — no sign-in (listed in PUBLIC_PAGES of the proxy
@@ -88,16 +88,14 @@ export default async function BookPage({
           <p className="text-sm text-muted-foreground" aria-live="polite">
             {results.length} {results.length === 1 ? "lodge" : "lodges"} found
           </p>
-          {results.map((r) => (
-            <LodgeResultRow key={r.lodge.id} result={r} guests={guests} />
-          ))}
+          <LodgeResults results={results} guests={guests} />
         </div>
       );
   }
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
+      <header className="flex flex-wrap items-baseline justify-between gap-2 pr-12">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Find a lodge</h1>
           <p className="text-sm text-muted-foreground">

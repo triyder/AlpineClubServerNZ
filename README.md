@@ -243,7 +243,11 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | `/profile`   | session       | Account info, **change password**, **light/dark theme**, sign out. |
 
 The console header carries a quick light/dark toggle; `/profile` has the full
-Light / Dark / System control (persisted via `next-themes`). Changing a password
+Light / Dark / System control (persisted via `next-themes`). The public pages
+(`/`, `/login`, `/register`, `/book`, listed once in `src/lib/public-pages.ts`)
+have their own light/dark toggle in the top-right corner and their own saved
+choice, **light by default** whatever the device prefers; the two choices never
+overwrite each other. Changing a password
 verifies the current one, rehashes with bcrypt, records an audit entry, and
 signs the user out to re-authenticate with the new credentials.
 

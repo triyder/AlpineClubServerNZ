@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, type Ref } from "react";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LODGE_FACILITY_LABELS } from "@/lib/other-lodges";
@@ -18,6 +18,8 @@ import {
  * The summary is an accordion header (a heading holding a button with
  * `aria-expanded`), so it works from the keyboard and to a screen reader; a
  * click anywhere else on the summary area reaches the same button.
+ *
+ * Controlled: whether it is open is the list's selection (`LodgeResults`).
  */
 
 function rateText(rate: number | null): string {
@@ -38,17 +40,31 @@ const count = (n: number | null) => (n === null ? "—" : String(n));
 export function LodgeResultRow({
   result,
   guests,
+  open,
+  onToggle,
+  className,
+  ref,
 }: {
   result: SearchResult;
   guests: number;
+  open: boolean;
+  onToggle: () => void;
+  className?: string;
+  ref?: Ref<HTMLElement>;
 }) {
   const { lodge, availableBeds, estimate } = result;
-  const [open, setOpen] = useState(false);
   const panelId = useId();
   const picture = lodge.picture;
 
   return (
-    <article className="overflow-hidden rounded-lg border border-border bg-card">
+    <article
+      ref={ref}
+      className={cn(
+        "overflow-hidden rounded-lg border bg-card",
+        open ? "border-ring shadow-md" : "border-border",
+        className,
+      )}
+    >
       <div className="grid gap-4 p-4 sm:grid-cols-[10rem_1fr_auto] sm:items-start">
         {/* eslint-disable-next-line @next/next/no-img-element -- a library picture at a capability URL, or the static fallback */}
         <img
@@ -71,7 +87,7 @@ export function LodgeResultRow({
           onClick={(e) => {
             // The button handles its own click (and Enter/Space); anything
             // else in the summary area forwards to it.
-            if (!(e.target as HTMLElement).closest("button")) setOpen((v) => !v);
+            if (!(e.target as HTMLElement).closest("button")) onToggle();
           }}
         >
           <h3 className="text-lg font-semibold leading-tight">
@@ -79,7 +95,7 @@ export function LodgeResultRow({
               type="button"
               aria-expanded={open}
               aria-controls={panelId}
-              onClick={() => setOpen((v) => !v)}
+              onClick={onToggle}
               className="flex w-full items-start justify-between gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span>{lodge.name}</span>

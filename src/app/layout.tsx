@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppThemeProvider } from "@/components/theme-provider";
+import { PublicThemeCorner } from "@/components/public-theme-corner";
 
 export const metadata: Metadata = {
   title: "AlpineClubServerNZ",
@@ -14,7 +15,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground antialiased">
-        <AppThemeProvider>{children}</AppThemeProvider>
+        <AppThemeProvider>
+          <PublicThemeCorner />
+          {children}
+        </AppThemeProvider>
       </body>
     </html>
   );

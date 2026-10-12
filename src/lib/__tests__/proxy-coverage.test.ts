@@ -2,6 +2,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { config } from "@/proxy";
+import { isPublicPath, PUBLIC_PAGES } from "@/lib/public-pages";
 
 /**
  * GUARD: every console page is behind the proxy's session gate.
@@ -16,12 +17,8 @@ import { config } from "@/proxy";
 
 const APP_ROOT = join(process.cwd(), "src", "app");
 
-/**
- * Pages that must be reachable without a session. `/book` is the public lodge
- * search for guests (its "Book now" redirect, `/book/go/:id`, is a route
- * handler and not a page).
- */
-const PUBLIC_PAGES = new Set(["/", "/login", "/register", "/book"]);
+/** Pages that must be reachable without a session (one list, shared with the theme). */
+const PUBLIC_PAGE_SET = new Set<string>(PUBLIC_PAGES);
 
 function pageRoutes(dir: string, prefix = ""): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -49,7 +46,7 @@ describe("proxy session gate coverage", () => {
     expect(routes).toEqual(expect.arrayContaining(["/dashboard", "/lodges", "/login"]));
   });
 
-  for (const route of routes.filter((r) => !PUBLIC_PAGES.has(r))) {
+  for (const route of routes.filter((r) => !PUBLIC_PAGE_SET.has(r))) {
     it(`${route} is matched by the proxy`, () => {
       expect(
         isMatched(route),
@@ -57,6 +54,13 @@ describe("proxy session gate coverage", () => {
       ).toBe(true);
     });
   }
+
+  it("no public page is gated, and the console is not treated as public", () => {
+    for (const page of PUBLIC_PAGES) expect(isMatched(page), page).toBe(false);
+    expect(isPublicPath("/book/go/abc")).toBe(true);
+    expect(isPublicPath("/dashboard")).toBe(false);
+    expect(isPublicPath("/bookings")).toBe(false);
+  });
 
   it("leaves the public lodge search ungated", () => {
     expect(routes).toContain("/book");
