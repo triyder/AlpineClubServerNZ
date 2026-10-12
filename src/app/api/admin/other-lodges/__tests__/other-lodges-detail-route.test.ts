@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const requireManager = vi.fn();
 vi.mock("@/lib/admin-guard", () => ({
@@ -150,6 +151,8 @@ describe("POST /api/admin/other-lodges with the new fields", () => {
     ["a non-http site URL", { siteUrl: "javascript:alert(1)" }],
     ["an impossible date", { winterSeasonStart: "2026-02-30" }],
     ["duplicate amenity names", { amenities: [{ name: "a" }, { name: "A" }] }],
+    ["a rate with three decimal places", { winterRateAdult: 45.555 }],
+    ["a negative rate", { summerRate5To11: -5 }],
   ])("400 for %s, and writes nothing", async (_label, extra) => {
     const res = await POST(jsonReq({ name: "X", ...extra }, "POST"));
     expect(res.status).toBe(400);
@@ -260,5 +263,37 @@ describe("PATCH /api/admin/other-lodges/:id with the new fields", () => {
     expect(res.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("non-member rates on the admin routes", () => {
+  it("POST writes each rate as two-place dollars and cents, blank as null", async () => {
+    create.mockResolvedValue(dbRow());
+    const res = await POST(
+      jsonReq(
+        { name: "Ruapehu Lodge", winterRateAdult: 45.5, winterRateUnder5: 0, summerRateAdult: null },
+        "POST",
+      ),
+    );
+    expect(res.status).toBe(201);
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      winterRateAdult: "45.50",
+      winterRateUnder5: "0.00",
+      summerRateAdult: null,
+    });
+  });
+
+  it("PATCH changes only the rates it names and returns them as numbers", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    update.mockResolvedValue(
+      dbRow({ summerRate12To17: new Prisma.Decimal("30.10"), winterRateAdult: null }),
+    );
+    const res = await PATCH(jsonReq({ summerRate12To17: 30.1 }, "PATCH"), ctx);
+    expect(res.status).toBe(200);
+    const data = update.mock.calls[0][0].data;
+    expect(data.summerRate12To17).toBe("30.10");
+    expect(data).not.toHaveProperty("winterRateAdult");
+    const body = await res.json();
+    expect(body.otherLodge).toMatchObject({ summerRate12To17: 30.1, winterRateAdult: null });
   });
 });

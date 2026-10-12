@@ -51,6 +51,24 @@ export const LODGE_INT_FIELDS = [
   "singleBeds",
   "minutesWalkToLodge",
 ] as const;
+/**
+ * Non-member rates per person per night (NZD incl. GST, display only), a winter
+ * and a summer set for each guideline age group: under 5, 5-11, 12-17, 18+.
+ * Stored as DECIMAL(8,2); on the wire a number of dollars with at most two
+ * decimal places, or null for "not set".
+ */
+export const LODGE_RATE_FIELDS = [
+  "winterRateUnder5",
+  "winterRate5To11",
+  "winterRate12To17",
+  "winterRateAdult",
+  "summerRateUnder5",
+  "summerRate5To11",
+  "summerRate12To17",
+  "summerRateAdult",
+] as const;
+/** The largest rate accepted, the most DECIMAL(8,2) holds below a million. */
+export const LODGE_RATE_MAX = 99999.99;
 /** Whether guests sleep in private rooms or dormitories. */
 export const LODGE_ROOM_TYPES = ["ROOM", "DORMITORY"] as const;
 export type LodgeRoomTypeValue = (typeof LODGE_ROOM_TYPES)[number];
@@ -59,11 +77,13 @@ export type LodgeBooleanField = (typeof LODGE_BOOLEAN_FIELDS)[number];
 export type LodgeTextField = (typeof LODGE_TEXT_FIELDS)[number];
 export type LodgeDateField = (typeof LODGE_DATE_FIELDS)[number];
 export type LodgeIntField = (typeof LODGE_INT_FIELDS)[number];
+export type LodgeRateField = (typeof LODGE_RATE_FIELDS)[number];
 export type LodgeDetailField =
   | LodgeBooleanField
   | LodgeTextField
   | LodgeDateField
   | LodgeIntField
+  | LodgeRateField
   | "roomType";
 
 /** `{ a: value, b: value }` for a list of keys, typed by the key union. */
@@ -80,6 +100,7 @@ const LODGE_DETAIL_SELECT = forKeys<LodgeDetailField, true>(
     ...LODGE_BOOLEAN_FIELDS,
     ...LODGE_DATE_FIELDS,
     ...LODGE_INT_FIELDS,
+    ...LODGE_RATE_FIELDS,
     "roomType",
   ],
   () => true,
@@ -162,7 +183,9 @@ export type SerializedLodgeDetail = { [K in LodgeTextField]: string | null } & {
   [K in LodgeBooleanField]: boolean;
 } & { [K in LodgeDateField]: string | null } & {
   [K in LodgeIntField]: number | null;
-} & { roomType: LodgeRoomTypeValue | null } & { amenities: LodgeAmenity[] };
+} & { [K in LodgeRateField]: number | null } & {
+  roomType: LodgeRoomTypeValue | null;
+} & { amenities: LodgeAmenity[] };
 
 /** `YYYY-MM-DD` for a DATE column (read back as UTC midnight), or null. */
 export function formatLodgeDate(date: Date | null): string | null {
@@ -177,12 +200,40 @@ export function parseLodgeDate(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
+/** A DECIMAL(8,2) column as read back (a Prisma Decimal), duck-typed. */
+type DecimalLike = { toFixed(dp: number): string };
+
+function isDecimalLike(value: unknown): value is DecimalLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { toFixed?: unknown }).toFixed === "function"
+  );
+}
+
+/** A stored rate as dollars (`45.5`), or null. Exact for two decimal places. */
+export function rateToNumber(value: DecimalLike | null): number | null {
+  return value == null ? null : Number(value.toFixed(2));
+}
+
+/** A rate as the fixed two-place text the DECIMAL column is written with. */
+export function rateToColumn(value: number | null): string | null {
+  return value === null ? null : value.toFixed(2);
+}
+
+/** True for a non-negative number with at most two decimal places. */
+export function isDollarsAndCents(value: number): boolean {
+  const cents = value * 100;
+  return Math.abs(cents - Math.round(cents)) < 1e-6;
+}
+
 function serializeLodgeDetail(lodge: OtherLodgeRecord): SerializedLodgeDetail {
   return {
     ...forKeys(LODGE_TEXT_FIELDS, (key) => lodge[key]),
     ...forKeys(LODGE_BOOLEAN_FIELDS, (key) => lodge[key]),
     ...forKeys(LODGE_DATE_FIELDS, (key) => formatLodgeDate(lodge[key])),
     ...forKeys(LODGE_INT_FIELDS, (key) => lodge[key]),
+    ...forKeys(LODGE_RATE_FIELDS, (key) => rateToNumber(lodge[key])),
     roomType: lodge.roomType,
     amenities: lodge.amenities.map((a) => ({
       name: a.name,
@@ -421,6 +472,15 @@ const lodgeCountField = z
   .nullable()
   .optional();
 
+/** A rate in dollars and cents, or null for "not set". */
+const lodgeRateField = z
+  .number()
+  .min(0)
+  .max(LODGE_RATE_MAX)
+  .refine(isDollarsAndCents, "Rates are dollars and cents: at most two decimal places")
+  .nullable()
+  .optional();
+
 /** Column width of each text detail field; a missing key is a type error. */
 const LODGE_TEXT_FIELD_MAX: Record<LodgeTextField, number> = {
   siteUrl: 500,
@@ -461,6 +521,7 @@ export const lodgeDetailShape = {
     .nullable()
     .optional(),
   ...forKeys(LODGE_DATE_FIELDS, () => dateOnlyField),
+  ...forKeys(LODGE_RATE_FIELDS, () => lodgeRateField),
   /** When present, REPLACES the lodge's whole amenity set. */
   amenities: amenitiesInputSchema.optional(),
 } satisfies Record<LodgeDetailField | "amenities", z.ZodType>;
@@ -469,18 +530,23 @@ type LodgeDetailInput = { [K in LodgeTextField]?: string | null } & {
   [K in LodgeBooleanField]?: boolean;
 } & { [K in LodgeDateField]?: string | null } & {
   [K in LodgeIntField]?: number | null;
-} & { roomType?: LodgeRoomTypeValue | null };
+} & { [K in LodgeRateField]?: number | null } & {
+  roomType?: LodgeRoomTypeValue | null;
+};
 
 export type LodgeDetailColumns = { [K in LodgeTextField]?: string | null } & {
   [K in LodgeBooleanField]?: boolean;
 } & { [K in LodgeDateField]?: Date | null } & {
   [K in LodgeIntField]?: number | null;
-} & { roomType?: LodgeRoomTypeValue | null };
+} & { [K in LodgeRateField]?: string | null } & {
+  roomType?: LodgeRoomTypeValue | null;
+};
 
 /**
  * The Prisma column values for whichever detail fields were PROVIDED — a key
  * left out stays out, so a partial update never clears a column it did not
- * mention. Text is trimmed, blank folds to null, dates become UTC-midnight.
+ * mention. Text is trimmed, blank folds to null, dates become UTC-midnight,
+ * rates become fixed two-place text for the DECIMAL column.
  */
 export function lodgeDetailColumns(input: LodgeDetailInput): LodgeDetailColumns {
   const data: LodgeDetailColumns = {};
@@ -494,6 +560,10 @@ export function lodgeDetailColumns(input: LodgeDetailInput): LodgeDetailColumns 
   }
   for (const key of LODGE_INT_FIELDS) {
     if (input[key] !== undefined) data[key] = input[key];
+  }
+  for (const key of LODGE_RATE_FIELDS) {
+    const value = input[key];
+    if (value !== undefined) data[key] = rateToColumn(value);
   }
   if (input.roomType !== undefined) data.roomType = input.roomType;
   for (const key of LODGE_DATE_FIELDS) {
@@ -510,7 +580,10 @@ export function lodgeDetailDiffers(
 ): boolean {
   return Object.keys(data).some((key) => {
     const next = data[key];
-    const current = existing[key];
+    let current = existing[key];
+    // A stored rate reads back as a Decimal; compare it in the two-place text
+    // form the writer produces, or every rate would look changed.
+    if (isDecimalLike(current)) current = current.toFixed(2);
     if (next instanceof Date || current instanceof Date) {
       const a = next instanceof Date ? formatLodgeDate(next) : null;
       const b = current instanceof Date ? formatLodgeDate(current) : null;

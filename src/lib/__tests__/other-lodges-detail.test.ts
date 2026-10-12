@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Prisma } from "@prisma/client";
 import {
   AMENITIES_PER_LODGE_MAX,
   AMENITY_DESCRIPTION_MAX,
@@ -11,6 +12,8 @@ import {
   LODGE_BOOLEAN_FIELDS,
   LODGE_DATE_FIELDS,
   LODGE_INT_FIELDS,
+  LODGE_RATE_FIELDS,
+  LODGE_RATE_MAX,
   LODGE_TEXT_FIELDS,
   lodgeDetailColumns,
   lodgeDetailDiffers,
@@ -21,6 +24,7 @@ import {
   otherLodgeUpdateSchema,
   otherLodgeUploadItemSchema,
   parseLodgeDate,
+  rateToNumber,
   serializeOtherLodgeForClient,
   UNLISTED_OTHER_LODGE_COLUMNS,
   type OtherLodgeRecord,
@@ -212,12 +216,12 @@ describe("the detail-field lists are the single source", () => {
 
   it("the validation shape carries exactly the listed fields plus amenities", () => {
     expect(Object.keys(lodgeDetailShape).sort()).toEqual(
-      [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, ...LODGE_INT_FIELDS, "roomType", "amenities"].sort(),
+      [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, ...LODGE_INT_FIELDS, ...LODGE_RATE_FIELDS, "roomType", "amenities"].sort(),
     );
   });
 
   it("the Prisma select carries every listed field", () => {
-    for (const key of [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, ...LODGE_INT_FIELDS, "roomType" as const]) {
+    for (const key of [...LODGE_TEXT_FIELDS, ...LODGE_BOOLEAN_FIELDS, ...LODGE_DATE_FIELDS, ...LODGE_INT_FIELDS, ...LODGE_RATE_FIELDS, "roomType" as const]) {
       expect(otherLodgeSelect[key], key).toBe(true);
     }
   });
@@ -332,6 +336,14 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
     cancellationPeriod: "14 days",
     winterSeasonStart: parseLodgeDate("2026-06-01"),
     summerSeasonStart: parseLodgeDate("2026-12-01"),
+    winterRateUnder5: new Prisma.Decimal("0.00"),
+    winterRate5To11: new Prisma.Decimal("20.00"),
+    winterRate12To17: new Prisma.Decimal("30.10"),
+    winterRateAdult: new Prisma.Decimal("45.50"),
+    summerRateUnder5: null,
+    summerRate5To11: null,
+    summerRate12To17: null,
+    summerRateAdult: new Prisma.Decimal("99999.99"),
     amenities: [{ name: "Sauna", description: null }],
     updatedAt: at,
   } as unknown as OtherLodgeRecord;
@@ -369,8 +381,72 @@ describe("serializeOtherLodgeForClient carries the new fields", () => {
       cancellationPeriod: "14 days",
       winterSeasonStart: "2026-06-01",
       summerSeasonStart: "2026-12-01",
+      winterRateUnder5: 0,
+      winterRate5To11: 20,
+      winterRate12To17: 30.1,
+      winterRateAdult: 45.5,
+      summerRateUnder5: null,
+      summerRate5To11: null,
+      summerRate12To17: null,
+      summerRateAdult: 99999.99,
       amenities: [{ name: "Sauna", description: null }],
       updatedAt: "2026-02-01T00:00:00.000Z",
     });
+  });
+});
+
+describe("non-member rates (dollars and cents)", () => {
+  const schemas = {
+    create: otherLodgeCreateSchema,
+    update: otherLodgeUpdateSchema,
+    upload: otherLodgeUploadItemSchema,
+  };
+  const base = { name: "Lodge" };
+
+  for (const [label, schema] of Object.entries(schemas)) {
+    describe(label, () => {
+      it.each([0, 45, 45.5, 45.55, 0.1, 0.29, LODGE_RATE_MAX, null])(
+        "accepts %s",
+        (value) => {
+          for (const key of LODGE_RATE_FIELDS) {
+            expect(ok(schema, { ...base, [key]: value }), key).toBe(true);
+          }
+        },
+      );
+
+      it.each([
+        ["three decimal places", 45.555],
+        ["a negative rate", -1],
+        ["more than the column holds", LODGE_RATE_MAX + 0.01],
+        ["a string", "45.00"],
+        ["not a number", Number.NaN],
+      ])("rejects %s", (_label, value) => {
+        expect(ok(schema, { ...base, winterRateAdult: value })).toBe(false);
+      });
+    });
+  }
+
+  it("writes a rate as fixed two-place text and null as null, only when provided", () => {
+    expect(lodgeDetailColumns({ winterRateAdult: 45.5, summerRateAdult: null })).toEqual({
+      winterRateAdult: "45.50",
+      summerRateAdult: null,
+    });
+    expect(lodgeDetailColumns({ winterRate5To11: 0.1 })).toEqual({ winterRate5To11: "0.10" });
+    expect(lodgeDetailColumns({ freeWifi: true })).not.toHaveProperty("winterRateAdult");
+  });
+
+  it("compares a stored Decimal with the written text by value", () => {
+    const stored = { winterRateAdult: new Prisma.Decimal("45.50") };
+    expect(lodgeDetailDiffers({ winterRateAdult: "45.50" }, stored)).toBe(false);
+    expect(lodgeDetailDiffers({ winterRateAdult: "46.00" }, stored)).toBe(true);
+    expect(lodgeDetailDiffers({ winterRateAdult: null }, stored)).toBe(true);
+    expect(lodgeDetailDiffers({ winterRateAdult: "45.50" }, { winterRateAdult: null })).toBe(true);
+    expect(lodgeDetailDiffers({ winterRateAdult: null }, { winterRateAdult: null })).toBe(false);
+  });
+
+  it("reads a stored rate back as dollars", () => {
+    expect(rateToNumber(new Prisma.Decimal("45.50"))).toBe(45.5);
+    expect(rateToNumber(new Prisma.Decimal("0.29"))).toBe(0.29);
+    expect(rateToNumber(null)).toBeNull();
   });
 });

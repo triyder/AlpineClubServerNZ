@@ -127,7 +127,7 @@ A lodge **deleted** on this server does not yet reach the clubs: the pull
 carries no tombstones, so a club keeps its copy until that is added (a
 follow-up issue; it will be an API version change).
 
-#### Lodge details and amenities (API version 2.1)
+#### Lodge details, amenities and rates (API versions 2.1 and 2.2)
 
 Besides name, location, booking officer and bed capacity, each lodge holds:
 
@@ -136,6 +136,7 @@ Besides name, location, booking officer and bed capacity, each lodge holds:
 | `siteUrl` | text (500) | The **non-member booking page URL** (the separate `bookingPath` was removed in 2.1). Must start with `http://` or `https://` (any case), carry no whitespace, control character or backslash, and name no username or password — it is shown as a link, and the URL parser alone would read `http:\\evil.com` or `https://club.nz@evil.com` as something else. Stored as typed. |
 | `doubleBeds`, `singleBeds`, `minutesWalkToLodge` | whole number | Optional, `0`–`100000`. |
 | `roomType` | `ROOM` or `DORMITORY` | Optional (a radio choice on `/lodges`). |
+| `winterRateUnder5`, `winterRate5To11`, `winterRate12To17`, `winterRateAdult`, `summerRateUnder5`, `summerRate5To11`, `summerRate12To17`, `summerRateAdult` | dollars and cents | **Non-member rate per person per night**, NZD incl. GST, for the public booking search (display only; nothing is charged here). Guideline age groups: under 5, 5–11, 12–17, 18+. Stored as `DECIMAL(8,2)`; on the API a number with at most two decimal places, `0`–`99999.99`, or `null`. Added in **2.2**. |
 
 Every text field here, the lodge name, the booking officer's name, email and
 phone, and an amenity's name and description refuse control characters
@@ -261,7 +262,7 @@ signs the user out to re-authenticate with the new credentials.
 ### API version
 
 The server has one `major.minor` **API version** (`SERVER_API_VERSION` in
-`src/lib/api-version.ts`, currently `2.0`) covering the whole `/api/v1` contract
+`src/lib/api-version.ts`, currently `2.2`) covering the whole `/api/v1` contract
 — other lodges, the message board, push registration and anything added later.
 A club holds the version it was built for and syncs only while the two are
 **identical**; any difference, a minor-only one included, pauses all transfer in
@@ -269,7 +270,7 @@ both directions until the club is upgraded.
 
 - **Check:** `GET /api/v1/version` with the club's Bearer token and its own
   version in `X-Client-Api-Version` (or `?clientVersion=`). It always answers
-  `200 { "version": "2.0", "match": true | false | null }` — `match` is `null`
+  `200 { "version": "2.2", "match": true | false | null }` — `match` is `null`
   when the caller declared no version. A club with no API key makes no call.
 - **Every check is audited** on `/audit` as `api.version.check`, with both
   versions and `match`. A mismatch also writes `api.version.mismatch` with
@@ -307,6 +308,9 @@ both directions until the club is upgraded.
   fingerprint as `1.2` because the contract itself did not change when the
   number was raised to mark the release. An entry in that file is never
   rewritten once released: it is the record of what that version meant.
+  `2.1` added the lodge bed counts, walk time, room type and the two extra
+  facilities, and folded the booking path into `siteUrl`. `2.2` adds the
+  eight non-member rates to the lodge upload and pull.
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test

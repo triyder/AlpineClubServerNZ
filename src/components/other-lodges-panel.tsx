@@ -29,7 +29,10 @@ import {
   AMENITY_NAME_MAX,
   LODGE_BOOLEAN_FIELDS,
   LODGE_NAME_MAX,
+  LODGE_RATE_FIELDS,
+  LODGE_RATE_MAX,
   type LodgeBooleanField,
+  type LodgeRateField,
   type SerializedOtherLodge,
 } from "@/lib/other-lodges";
 
@@ -55,6 +58,26 @@ const BOOLEAN_FIELDS = LODGE_BOOLEAN_FIELDS.map((key) => ({
   label: BOOLEAN_FIELD_LABELS[key],
 }));
 
+// The rate grid: a row per season, a column per guideline age group. Typed
+// over the field list, so a rate field missing from the grid is a type error.
+const RATE_AGE_GROUPS = ["Under 5", "5–11", "12–17", "18+"] as const;
+const RATE_GRID: ReadonlyArray<{
+  season: string;
+  fields: readonly [LodgeRateField, LodgeRateField, LodgeRateField, LodgeRateField];
+}> = [
+  {
+    season: "Winter",
+    fields: ["winterRateUnder5", "winterRate5To11", "winterRate12To17", "winterRateAdult"],
+  },
+  {
+    season: "Summer",
+    fields: ["summerRateUnder5", "summerRate5To11", "summerRate12To17", "summerRateAdult"],
+  },
+];
+
+/** Blank, or dollars with at most two decimal places. */
+const RATE_PATTERN = /^\d+(\.\d{1,2})?$/;
+
 type AmenityRow = { name: string; description: string };
 
 type FormState = {
@@ -73,6 +96,7 @@ type FormState = {
   winterSeasonStart: string;
   summerSeasonStart: string;
   flags: Record<LodgeBooleanField, boolean>;
+  rates: Record<LodgeRateField, string>;
   amenities: AmenityRow[];
   image: LodgeImageRef | null;
   logo: LodgeImageRef | null;
@@ -81,6 +105,10 @@ type FormState = {
 const emptyFlags = Object.fromEntries(
   LODGE_BOOLEAN_FIELDS.map((key) => [key, false]),
 ) as Record<LodgeBooleanField, boolean>;
+
+const emptyRates = Object.fromEntries(
+  LODGE_RATE_FIELDS.map((key) => [key, ""]),
+) as Record<LodgeRateField, string>;
 
 const emptyForm: FormState = {
   name: "",
@@ -98,6 +126,7 @@ const emptyForm: FormState = {
   winterSeasonStart: "",
   summerSeasonStart: "",
   flags: emptyFlags,
+  rates: emptyRates,
   amenities: [],
   image: null,
   logo: null,
@@ -123,6 +152,12 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
     flags: Object.fromEntries(
       LODGE_BOOLEAN_FIELDS.map((key) => [key, lodge[key]]),
     ) as Record<LodgeBooleanField, boolean>,
+    rates: Object.fromEntries(
+      LODGE_RATE_FIELDS.map((key) => [
+        key,
+        lodge[key] === null ? "" : lodge[key].toFixed(2),
+      ]),
+    ) as Record<LodgeRateField, string>,
     amenities: lodge.amenities.map((a) => ({
       name: a.name,
       description: a.description ?? "",
@@ -158,6 +193,9 @@ function formPayload(form: FormState) {
     winterSeasonStart: form.winterSeasonStart || null,
     summerSeasonStart: form.summerSeasonStart || null,
     ...form.flags,
+    ...(Object.fromEntries(
+      LODGE_RATE_FIELDS.map((key) => [key, countOrNull(form.rates[key])]),
+    ) as Record<LodgeRateField, number | null>),
     amenities: form.amenities
       .filter((a) => a.name.trim() !== "")
       .map((a) => ({
@@ -250,6 +288,15 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
       const v = value.trim();
       if (v !== "" && (!/^\d+$/.test(v) || Number(v) > 100_000)) {
         setError(`${label} must be a whole number.`);
+        return;
+      }
+    }
+    for (const key of LODGE_RATE_FIELDS) {
+      const v = form.rates[key].trim();
+      if (v !== "" && (!RATE_PATTERN.test(v) || Number(v) > LODGE_RATE_MAX)) {
+        setError(
+          "Rates must be dollars and cents, for example 45 or 45.50.",
+        );
         return;
       }
     }
@@ -355,7 +402,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
         onClose={cancelEdit}
         dismissible={!saving}
         title={creating ? "Add other lodge" : "Edit other lodge"}
-        description="Only the name is required. Everything else — contact, capacity, website, facilities, seasons, amenities and pictures — is optional."
+        description="Only the name is required. Everything else — contact, capacity, website, facilities, seasons, rates, amenities and pictures — is optional."
       >
         {error ? (
           <p className="text-sm text-destructive" role="alert">
@@ -555,6 +602,59 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                 />
               </div>
             </div>
+
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">
+                Non-member rates per person per night (NZD, incl. GST)
+              </legend>
+              <p className="text-xs text-muted-foreground">
+                Shown on the public booking search. Leave blank if not known.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[28rem] text-sm">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="sr-only">
+                        Season
+                      </th>
+                      {RATE_AGE_GROUPS.map((group) => (
+                        <th
+                          key={group}
+                          scope="col"
+                          className="px-1 pb-1 text-left font-normal text-muted-foreground"
+                        >
+                          {group}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {RATE_GRID.map(({ season, fields }) => (
+                      <tr key={season}>
+                        <th scope="row" className="pr-2 text-left font-normal">
+                          {season}
+                        </th>
+                        {fields.map((key, i) => (
+                          <td key={key} className="px-1 py-1">
+                            <Input
+                              aria-label={`${season} rate, ${RATE_AGE_GROUPS[i]}`}
+                              inputMode="decimal"
+                              value={form.rates[key]}
+                              onChange={(e) =>
+                                setForm((p) => ({
+                                  ...p,
+                                  rates: { ...p.rates, [key]: e.target.value },
+                                }))
+                              }
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </fieldset>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <ImagePicker

@@ -254,6 +254,19 @@ model OtherLodge {
   winterSeasonStart    DateTime? @map("winter_season_start") @db.Date
   summerSeasonStart    DateTime? @map("summer_season_start") @db.Date
 
+  // Non-member rates per person per night, NZD incl. GST, for the public
+  // booking search. Display only: nothing is charged here. Guideline age
+  // groups (under 5, 5-11, 12-17, 18+); real ages are taken by the lodge's own
+  // booking site. Null = not set.
+  winterRateUnder5  Decimal? @map("winter_rate_under5") @db.Decimal(8, 2)
+  winterRate5To11   Decimal? @map("winter_rate_5_to_11") @db.Decimal(8, 2)
+  winterRate12To17  Decimal? @map("winter_rate_12_to_17") @db.Decimal(8, 2)
+  winterRateAdult   Decimal? @map("winter_rate_adult") @db.Decimal(8, 2)
+  summerRateUnder5  Decimal? @map("summer_rate_under5") @db.Decimal(8, 2)
+  summerRate5To11   Decimal? @map("summer_rate_5_to_11") @db.Decimal(8, 2)
+  summerRate12To17  Decimal? @map("summer_rate_12_to_17") @db.Decimal(8, 2)
+  summerRateAdult   Decimal? @map("summer_rate_adult") @db.Decimal(8, 2)
+
   amenities Amenity[]
 
   // Pictures chosen from the image library. SetNull: a lodge outlives its

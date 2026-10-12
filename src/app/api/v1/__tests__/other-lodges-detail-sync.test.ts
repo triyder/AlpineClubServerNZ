@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const authenticate = vi.fn();
 vi.mock("@/lib/api-auth", async (orig) => {
@@ -447,5 +448,67 @@ describe("POST /api/v1/other-lodges (upload) updates only the club's own lodges"
     const res = await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 99 }] }));
     expect((await res.json()).updated).toBe(1);
     expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("non-member rates on the club upload and pull (API 2.2)", () => {
+  it("an upload creates a lodge with its rates as two-place text", async () => {
+    findUnique.mockResolvedValue(null);
+    const res = await POST(
+      req("POST", { lodges: [{ name: "Whakapapa Lodge", winterRateAdult: 45.5, summerRateUnder5: 0 }] }),
+    );
+    expect((await res.json()).created).toBe(1);
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      winterRateAdult: "45.50",
+      summerRateUnder5: "0.00",
+    });
+  });
+
+  it("re-uploading the stored rates is 'unchanged' and writes nothing", async () => {
+    findUnique.mockResolvedValue(dbRow({ winterRateAdult: new Prisma.Decimal("45.50") }));
+    const res = await POST(
+      req("POST", { lodges: [{ name: "Whakapapa Lodge", winterRateAdult: 45.5 }] }),
+    );
+    expect(await res.json()).toMatchObject({ updated: 0, unchanged: 1 });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("a changed or cleared rate is an update", async () => {
+    findUnique.mockResolvedValue(dbRow({ winterRateAdult: new Prisma.Decimal("45.50") }));
+    const res = await POST(
+      req("POST", { lodges: [{ name: "Whakapapa Lodge", winterRateAdult: null }] }),
+    );
+    expect((await res.json()).updated).toBe(1);
+    expect(update.mock.calls[0][0].data.winterRateAdult).toBeNull();
+  });
+
+  it("an upload that does not mention rates leaves them alone (a 2.1-shaped item)", async () => {
+    findUnique.mockResolvedValue(dbRow({ winterRateAdult: new Prisma.Decimal("45.50") }));
+    await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 30 }] }));
+    expect(update.mock.calls[0][0].data).not.toHaveProperty("winterRateAdult");
+  });
+
+  it("400 for a rate that is not dollars and cents, writing nothing", async () => {
+    const res = await POST(
+      req("POST", { lodges: [{ name: "Whakapapa Lodge", winterRateAdult: 45.555 }] }),
+    );
+    expect(res.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("the pull returns every rate as dollars, null when not set", async () => {
+    findMany
+      .mockResolvedValueOnce([
+        dbRow({
+          winterRateAdult: new Prisma.Decimal("45.50"),
+          summerRate5To11: new Prisma.Decimal("20.00"),
+          winterRateUnder5: null,
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+    const res = await GET(req("GET"));
+    const lodge = (await res.json()).lodges[0];
+    expect(lodge).toMatchObject({ winterRateAdult: 45.5, summerRate5To11: 20, winterRateUnder5: null });
   });
 });

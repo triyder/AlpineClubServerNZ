@@ -160,7 +160,8 @@ function itemData(item: OtherLodgeUploadItem): OtherLodgeMutableFields {
 // when a club re-uploads an unchanged row — keeping distribution incremental.
 function itemDiffers(
   data: OtherLodgeMutableFields,
-  existing: OtherLodgeMutableFields,
+  // The stored row as read: its rates are Decimals, not the written text.
+  existing: Record<string, unknown>,
 ): boolean {
   // Shared with the detail fields: it compares dates by calendar day, which a
   // plain `!==` on two Date objects would not (every pair would look changed).
