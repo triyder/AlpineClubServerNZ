@@ -93,7 +93,7 @@ export async function GET(req: Request) {
     prisma.otherLodge.findMany({
       where: { sourceClubId: club.id },
       orderBy: { name: "asc" },
-      select: { name: true },
+      select: { id: true, name: true },
     }),
   ]);
 
@@ -122,7 +122,7 @@ export async function GET(req: Request) {
     buildOtherLodgePullEnvelope({
       lodges: serialized,
       cursor,
-      ownLodgeNames: owned.map((l) => l.name),
+      ownLodges: owned,
     }),
   );
 }

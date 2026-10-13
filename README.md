@@ -171,7 +171,9 @@ run several lodges, so a club can own several.
 - A club can still add a **new** lodge by uploading it; it becomes that club's.
 - Every pull of `GET /api/v1/other-lodges` returns `ownLodgeNames`, by lodge name
   (the booking site keys its copy by name), so the site can allow editing only
-  those. It is sent on every pull, incremental or not, because it is the club's
+  those. Since 2.2 it also returns `ownLodges`, the same lodges as `{ id, name }`:
+  the booking site links each of its own lodges to a central one by that
+  permanent id (a lodge can be renamed here; its id never changes). It is sent on every pull, incremental or not, because it is the club's
   whole current list and not a delta. A club's upload can only change a lodge it
   owns; the server enforces that whatever the site does.
 
@@ -315,7 +317,11 @@ both directions until the club is upgraded.
   rewritten once released: it is the record of what that version meant.
   `2.1` added the lodge bed counts, walk time, room type and the two extra
   facilities, and folded the booking path into `siteUrl`. `2.2` adds the
-  eight non-member rates to the lodge upload and pull.
+  eight non-member rates to the lodge upload and pull, and `ownLodges`
+  (`{ id, name }` for each lodge the club owns) to the pull, so a booking site
+  can link its own lodges to the central ones by permanent id rather than by a
+  name that can change. Its fingerprint was recorded once more, for
+  `ownLodges`, before 2.2 was released; once released it is never rewritten.
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test

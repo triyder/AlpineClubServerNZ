@@ -171,7 +171,7 @@ export function currentContractFingerprint(): string {
         buildOtherLodgePullEnvelope({
           lodges: [serializeOtherLodgeForClient(lodgeFixture)],
           cursor: "c",
-          ownLodgeNames: ["n"],
+          ownLodges: [{ id: "i", name: "n" }],
         }),
       ),
       post: keysOf(serializePostForClient(postFixture, "https://example.test")),

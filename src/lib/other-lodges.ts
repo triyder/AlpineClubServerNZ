@@ -729,17 +729,24 @@ export function serializeOtherLodgeForClient(
  * because it is the club's whole current list and not a delta: a lodge that was
  * unticked has not changed, so no incremental row would ever announce its loss.
  * By NAME, because that is how the booking site keys its own copy.
+ *
+ * `ownLodges` (API 2.2) is the same list with each lodge's permanent `id`.
+ * A lodge can be renamed here, so the booking site links each of its own
+ * lodges to the central one BY ID (its "Central lodge" setting, and the id the
+ * public search asks it about); the name rides along for its dropdown. Both
+ * lists are built from the one query, so they cannot disagree.
  */
 export function buildOtherLodgePullEnvelope(input: {
   lodges: DistributedOtherLodge[];
   cursor: string | null;
-  ownLodgeNames: string[];
+  ownLodges: Array<{ id: string; name: string }>;
 }) {
   return {
     lodges: input.lodges,
     cursor: input.cursor,
     count: input.lodges.length,
-    ownLodgeNames: input.ownLodgeNames,
+    ownLodgeNames: input.ownLodges.map((l) => l.name),
+    ownLodges: input.ownLodges.map((l) => ({ id: l.id, name: l.name })),
   };
 }
 

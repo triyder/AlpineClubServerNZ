@@ -357,7 +357,7 @@ describe("GET /api/v1/other-lodges (pull) with the new fields", () => {
 
 describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", () => {
   /** Answers the two queries the route makes: the lodges, and the club's own. */
-  function answer(lodges: unknown[], owned: Array<{ name: string }>) {
+  function answer(lodges: unknown[], owned: Array<{ id: string; name: string }>) {
     findMany.mockImplementation(async (args: { where?: { sourceClubId?: string } }) =>
       args.where?.sourceClubId !== undefined ? owned : lodges,
     );
@@ -368,7 +368,7 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
       .find((a) => a.where?.sourceClubId !== undefined);
 
   it("returns the names of exactly the lodges the authenticated club owns", async () => {
-    answer([dbRow()], [{ name: "Alpha Lodge" }, { name: "Beta Lodge" }]);
+    answer([dbRow()], [{ id: "la", name: "Alpha Lodge" }, { id: "lb", name: "Beta Lodge" }]);
     const res = await GET(req("GET"));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -380,10 +380,22 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
     answer([dbRow()], []);
     const body = await (await GET(req("GET"))).json();
     expect(body.ownLodgeNames).toEqual([]);
+    expect(body.ownLodges).toEqual([]);
+  });
+
+  it("returns each owned lodge's permanent id beside its name (API 2.2), from the same query", async () => {
+    answer([dbRow()], [{ id: "la", name: "Alpha Lodge" }, { id: "lb", name: "Beta Lodge" }]);
+    const body = await (await GET(req("GET"))).json();
+    expect(body.ownLodges).toEqual([
+      { id: "la", name: "Alpha Lodge" },
+      { id: "lb", name: "Beta Lodge" },
+    ]);
+    // Only the two fields: the envelope is not a second copy of the lodge.
+    expect(ownedQuery()).toMatchObject({ select: { id: true, name: true } });
   });
 
   it("returns the whole list on an INCREMENTAL pull too (it is not a delta)", async () => {
-    answer([], [{ name: "Alpha Lodge" }]);
+    answer([], [{ id: "la", name: "Alpha Lodge" }]);
     const res = await GET(
       new Request("https://s/api/v1/other-lodges?since=2026-02-01T00:00:00.000Z", {
         method: "GET",
@@ -398,7 +410,7 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
   });
 
   it("takes the club from the token, never from the request", async () => {
-    answer([dbRow()], [{ name: "Alpha Lodge" }]);
+    answer([dbRow()], [{ id: "la", name: "Alpha Lodge" }]);
     await GET(
       new Request("https://s/api/v1/other-lodges?clubId=club_other&sourceClubId=club_other", {
         method: "GET",
@@ -411,7 +423,7 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
   it("keeps the envelope's existing fields", async () => {
     answer([dbRow()], []);
     const body = await (await GET(req("GET"))).json();
-    expect(Object.keys(body).sort()).toEqual(["count", "cursor", "lodges", "ownLodgeNames"]);
+    expect(Object.keys(body).sort()).toEqual(["count", "cursor", "lodges", "ownLodgeNames", "ownLodges"]);
     expect(body.count).toBe(1);
   });
 });
