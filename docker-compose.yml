@@ -59,6 +59,14 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe123!}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      # Derives each club's push secret: signs shared-post pushes AND the
+      # public lodge search's free-beds questions. Unset, no club can register
+      # a push target, so pushes stop (polling still delivers posts) and every
+      # lodge shows "beds available unknown". >= 32 characters.
+      PUSH_SIGNING_KEY: ${PUSH_SIGNING_KEY:-}
+      # Private addresses club installs may be reached at (the reverse proxy on
+      # this server's own network), comma-separated IP literals. Empty = none.
+      ALLOWED_PRIVATE_CLUB_ADDRESSES: ${ALLOWED_PRIVATE_CLUB_ADDRESSES:-}
       # Communication Portal image storage. MUST be the volume mount below and
       # MUST stay outside the image: the Dockerfile copies `public/` from the
       # build stage, so anything written there is destroyed on every rebuild.

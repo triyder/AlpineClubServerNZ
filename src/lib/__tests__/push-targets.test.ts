@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ lookup: vi.fn() }));
 vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
@@ -140,5 +140,54 @@ describe("assertPublicDestination", () => {
     await expect(
       assertPublicDestination("https://empty.example.nz/push"),
     ).rejects.toThrow(/could not be resolved/);
+  });
+});
+
+describe("ALLOWED_PRIVATE_CLUB_ADDRESSES (the reverse proxy clubs are reached through)", () => {
+  afterEach(() => {
+    delete process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES;
+  });
+
+  it("lets through exactly the named private address", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.101";
+    mocks.lookup.mockResolvedValue([{ address: "192.168.1.101" }]);
+    await expect(
+      assertPublicDestination("https://club.example.nz/push"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("still refuses every other private address, including a neighbour of the named one", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.101";
+    for (const address of ["192.168.1.102", "10.0.0.1", "127.0.0.1", "169.254.169.254"]) {
+      mocks.lookup.mockResolvedValue([{ address }]);
+      await expect(
+        assertPublicDestination("https://club.example.nz/push"),
+        address,
+      ).rejects.toThrow(/private network/);
+    }
+  });
+
+  it("refuses when a host answers with the named address AND another private one", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.101";
+    mocks.lookup.mockResolvedValue([{ address: "192.168.1.101" }, { address: "10.0.0.1" }]);
+    await expect(
+      assertPublicDestination("https://club.example.nz/push"),
+    ).rejects.toThrow(/private network/);
+  });
+
+  it("ignores entries that are not IP literals, so a typo cannot open a range", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.0/24, 192.168.1.*, proxy.lan, ,";
+    mocks.lookup.mockResolvedValue([{ address: "192.168.1.101" }]);
+    await expect(
+      assertPublicDestination("https://club.example.nz/push"),
+    ).rejects.toThrow(/private network/);
+  });
+
+  it("accepts several addresses, spaced or not", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = " 192.168.1.101 ,192.168.1.105";
+    mocks.lookup.mockResolvedValue([{ address: "192.168.1.105" }]);
+    await expect(
+      assertPublicDestination("https://club.example.nz/push"),
+    ).resolves.toBeUndefined();
   });
 });

@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /**
  * Central, validated access to environment configuration. Reading through
  * these helpers keeps defaults and the ">= 32 char secret" invariant in one
@@ -40,6 +42,32 @@ export function rateLimitMax(): number {
 export function rateLimitWindowMs(): number {
   const raw = Number(process.env.RATE_LIMIT_WINDOW_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+}
+
+/**
+ * Private-network addresses this server may connect to on a club's behalf
+ * (`ALLOWED_PRIVATE_CLUB_ADDRESSES`, comma-separated IP literals).
+ *
+ * Every outbound call to a club — push registration, push delivery and the
+ * availability question — refuses a hostname that resolves inside a private
+ * network (`assertPublicDestination`), because a club chooses the URL. Where
+ * club installs are reached through a reverse proxy on the SAME private
+ * network as this server, their hostnames legitimately resolve to that
+ * proxy's address, which the check would refuse. Naming that one address here
+ * lets it through and nothing else.
+ *
+ * Only exact IP literals count: anything that is not one is ignored rather
+ * than widened into a range, so a typo can never open more than it names.
+ * Empty by default.
+ */
+export function allowedPrivateClubAddresses(): ReadonlySet<string> {
+  const raw = process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => isIP(entry) !== 0),
+  );
 }
 
 /**

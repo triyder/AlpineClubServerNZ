@@ -58,6 +58,36 @@ Two operational notes:
   replica would break both. Scaling out needs shared storage and a shared
   limiter first.
 
+### Free beds on the public lodge search
+
+`/book` shows a lodge's free beds for the searched stay by asking that lodge's
+**club booking site** at search time, and forgets the answer; nothing is
+stored or cached. For each lodge that already fits the party and the ticked
+facilities, and whose owning club is approved with a push target registered,
+the server calls `GET /api/webhooks/servernz-availability?lodgeId&from&to` at
+the ORIGIN of the club's push URL (AlpineClubBookingsNZ, issue #62), signed
+like a push: `X-Acs-Timestamp` and `X-Acs-Signature`, an HMAC with the club's
+derived push secret over `${timestamp}.availability
+<lodgeId>
+<from>
+<to>`.
+The club answers one number, the fewest free beds on any night of the stay;
+six clubs are asked at a time, each gets three seconds, and anything else
+(no registration, a refused address, a timeout, an error, an answer about a
+different lodge or stay) shows **beds available unknown**. A lodge links to
+the club's own lodge by its permanent id (`ownLodges` in the 2.2 pull).
+
+Two settings decide whether it works at all:
+
+- **`PUSH_SIGNING_KEY`** (>= 32 characters) must reach the app container.
+  Without it no club can register a push target, so no club has the address or
+  the secret to be asked with. `docker-compose.yml` passes it from `.env`.
+- **`ALLOWED_PRIVATE_CLUB_ADDRESSES`** names the private address(es) club sites
+  are reached at when they sit behind a reverse proxy on this server's own
+  network (their hostnames resolve to the proxy). Every call to a club
+  refuses a private address otherwise — registration, push delivery and this
+  question alike. Exact IP literals only; a range or a name is ignored.
+
 Retention deletes content across the network only insofar as each club's install
 applies the removals it is sent; a club running a modified or long-stale install
 keeps its copies. The Posts screen is the place to check what has actually
@@ -235,7 +265,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | ------------ | ------------- | -------------------------------------------------------------- |
 | `/login`     | public        | Email + password sign-in.                                      |
 | `/register`  | public        | Lodge submits a link request.                                  |
-| `/book`      | public        | **Find a lodge** — guests search the registry by dates, guests (under 5 / 5–11 / 12–17 / 18+) and facilities, expand a lodge for its amenities, non-member rates and an estimated total, and press **Book now** to go to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). This server never makes a booking. Shows only public lodge fields; rate-limited per IP. |
+| `/book`      | public        | **Find a lodge** — guests search the registry by dates, guests (under 5 / 5–11 / 12–17 / 18+) and facilities, expand a lodge for its amenities, non-member rates and an estimated total, and press **Book now** to go to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). This server never makes a booking. Shows only public lodge fields; rate-limited per IP. Free beds are asked live of each lodge's club booking site and never stored (see *Free beds on the public lodge search*). |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager), and see the **API version each club last reported** — up to date, behind (its site must be upgraded), newer than this server, or not reported — with when it last checked. |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |

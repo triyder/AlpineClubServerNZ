@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { allowedPrivateClubAddresses } from "@/lib/env";
 
 /**
  * Validating the URL a club asks this server to push to.
@@ -150,8 +151,14 @@ export async function assertPublicDestination(url: string): Promise<void> {
   // EVERY address must be acceptable, not merely one of them: a host with both
   // a public and a private record would otherwise pass here and connect to
   // whichever the resolver returned first at delivery time.
+  //
+  // The one exception is an address the operator named exactly in
+  // ALLOWED_PRIVATE_CLUB_ADDRESSES — the reverse proxy club installs are
+  // reached through on this server's own network. Exact match only; the rest
+  // of the private ranges stay refused.
+  const allowed = allowedPrivateClubAddresses();
   for (const { address } of addresses) {
-    if (isBlockedAddress(address)) {
+    if (isBlockedAddress(address) && !allowed.has(address.toLowerCase())) {
       throw new PushTargetError(
         "That hostname resolves to an address inside a private network.",
       );

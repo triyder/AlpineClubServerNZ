@@ -13,6 +13,7 @@ import {
   totalGuests,
   type RawSearchParams,
 } from "@/lib/lodge-search";
+import { fetchFreeBeds, loadAvailabilityTargets } from "@/lib/club-availability";
 import { FacilityFilter, SearchBar } from "@/components/book/search-form";
 import { LodgeResults } from "@/components/book/lodge-results";
 
@@ -74,9 +75,17 @@ export default async function BookPage({
       select: publicLodgeSelect,
       orderBy: otherLodgeOrderBy(),
     });
-    // Availability from the clubs' booking apps arrives in Phase D; until then
-    // every lodge is "beds available unknown".
-    const results = searchLodges(records.map(toPublicLodge), parsed.query);
+    // Live free beds from each owning club's booking site, asked now and not
+    // stored (Phase D). Only the lodges that already fit the party and the
+    // ticked facilities are asked about; a club that does not answer leaves
+    // its lodge "beds available unknown".
+    const lodges = records.map(toPublicLodge);
+    const candidates = searchLodges(lodges, parsed.query).map((r) => r.lodge.id);
+    const availability = await fetchFreeBeds(await loadAvailabilityTargets(candidates), {
+      from: parsed.query.checkIn,
+      to: parsed.query.checkOut,
+    });
+    const results = searchLodges(lodges, parsed.query, availability);
     const guests = totalGuests(parsed.query.guests);
     body =
       results.length === 0 ? (

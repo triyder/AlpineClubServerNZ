@@ -6,9 +6,10 @@ and is sent to the lodge's own booking site to make the actual booking. This
 server never takes a booking.
 
 Status: **Phase A done** (rates, API 2.2). **Phase B done** (public `/book`
-page; every lodge shows "beds available unknown" until Phase D). **Phase C**
-issues filed in the booking app (#61, #62); not started. Phases D–E not
-started.
+page). **Phase C** in the booking app: #61 rates (PR #63) and #62 availability
+endpoint (PR #65), both open. **Phase D done** on this server (live free beds,
+the private-address allowlist, `PUSH_SIGNING_KEY` passed through compose).
+Phase E (release) not started.
 
 ---
 
@@ -151,6 +152,12 @@ is linked without setup.
     validation.
 
 ## Phase D — Live call from the server, and the contract (central server)
+
+*Built as below, with two findings on the way:* `PUSH_SIGNING_KEY` was never
+passed into the Docker app container, so no club could register a push target
+(and so none could be asked); `docker-compose.yml` now passes it. And the link
+is by the central lodge's permanent id (`ownLodges`, #62 decision D5), so the
+club is asked `?lodgeId=`, not by name.
 
 22. **Client** `src/lib/club-availability.ts` — for each result lodge with a
     linked club that has a push URL: take the push URL's origin, call the
