@@ -10,6 +10,8 @@ const findMany = vi.fn();
 const findUnique = vi.fn();
 const update = vi.fn();
 const del = vi.fn();
+const tombstone = vi.fn();
+const transaction = vi.fn(async (ops: unknown[]) => Promise.all(ops));
 const auditCreate = vi.fn().mockResolvedValue({});
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -20,6 +22,8 @@ vi.mock("@/lib/db", () => ({
       update: (...a: unknown[]) => update(...a),
       delete: (...a: unknown[]) => del(...a),
     },
+    deletedOtherLodge: { create: (...a: unknown[]) => tombstone(...a) },
+    $transaction: (ops: unknown[]) => transaction(ops),
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -247,6 +251,7 @@ describe("DELETE /api/admin/other-lodges/[id]", () => {
     const res = await DELETE(jsonReq({}, "DELETE"), ctx("nope"));
     expect(res.status).toBe(404);
     expect(del).not.toHaveBeenCalled();
+    expect(tombstone).not.toHaveBeenCalled();
   });
 
   it("deletes an existing lodge and audits it", async () => {
@@ -256,5 +261,18 @@ describe("DELETE /api/admin/other-lodges/[id]", () => {
     expect(res.status).toBe(200);
     expect(del).toHaveBeenCalledOnce();
     expect(auditCreate).toHaveBeenCalled();
+  });
+
+  it("writes the lodge's tombstone in the SAME transaction as the delete (#16)", async () => {
+    transaction.mockClear();
+    tombstone.mockClear();
+    findUnique.mockResolvedValue(dbRow({ id: "l1", name: "Whakapapa Lodge" }));
+    del.mockResolvedValue(dbRow());
+    tombstone.mockResolvedValue({});
+    await DELETE(jsonReq({}, "DELETE"), ctx("l1"));
+    expect(transaction).toHaveBeenCalledOnce();
+    expect((transaction.mock.calls[0][0] as unknown[]).length).toBe(2);
+    expect(del).toHaveBeenCalledWith({ where: { id: "l1" } });
+    expect(tombstone).toHaveBeenCalledWith({ data: { id: "l1", name: "Whakapapa Lodge" } });
   });
 });

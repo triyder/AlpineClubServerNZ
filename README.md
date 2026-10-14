@@ -410,11 +410,22 @@ without a version change).
 3. Every connected club **pulls** the registry: `GET /api/v1/other-lodges`
    returns every entry. Pass `?since=<ISO>` for an incremental pull; use the
    response `cursor` as the next `since`. The cursor is the newest `updatedAt`
-   the pull saw, and a row whose transaction committed just after the query
+   (or deletion, below) the pull saw, and a row whose transaction committed just after the query
    ran can carry an `updatedAt` before it; the booking site therefore asks
    from 60 seconds before its stored cursor on every incremental pull, and its
    per-row "unchanged" skip makes the re-sent rows harmless. That overlap is
    what makes the incremental pull safe against a late commit.
+4. **Deletions (API 2.4).** Deleting a lodge (`DELETE /api/admin/other-lodges/:id`)
+   also writes a **tombstone** (`deleted_other_lodges`: the lodge's id, its
+   name and when it was deleted), in the same transaction. Every pull returns
+   `deletedLodges: [{ id, deletedAt }]`, oldest first: the deletions newer than
+   `since`, or every deletion on a pull without one. So a club removes its copy
+   however stale its cursor is. The `cursor` is the newest instant across the
+   returned lodges **and** deletions, so a pull that carried only deletions
+   still moves past them. A deleted lodge's id is never reissued, so it cannot
+   reappear, and a new lodge may take its name. Deletions are not undone. The
+   booking site removes its copy unless a booking or booking request there
+   still refers to it, in which case it keeps it and says so.
 
 Admin-only:
 

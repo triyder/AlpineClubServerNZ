@@ -221,7 +221,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Lodge not found" }, { status: 404 });
   }
 
-  await prisma.otherLodge.delete({ where: { id: existing.id } });
+  // The tombstone rides in the same transaction (#16): every club's next pull
+  // is told this id was deleted, however stale its cursor, so each removes its
+  // own copy. Never one without the other.
+  await prisma.$transaction([
+    prisma.otherLodge.delete({ where: { id: existing.id } }),
+    prisma.deletedOtherLodge.create({ data: { id: existing.id, name: existing.name } }),
+  ]);
 
   await recordAudit({
     action: "otherLodge.delete",

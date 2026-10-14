@@ -172,6 +172,7 @@ export function currentContractFingerprint(): string {
           lodges: [serializeOtherLodgeForClient(lodgeFixture)],
           cursor: "c",
           ownLodges: [{ id: "i", name: "n" }],
+          deletedLodges: [{ id: "d", deletedAt: at }],
         }),
       ),
       post: keysOf(serializePostForClient(postFixture, "https://example.test")),

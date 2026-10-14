@@ -296,6 +296,20 @@ model OtherLodge {
   @@map("other_lodges")
 }
 
+// A lodge deleted from the registry (#16): its id, kept so every club's next
+// pull can be told to remove its copy, however stale its cursor. Written in the
+// same transaction as the delete. Keyed by the deleted lodge's id, never its
+// name, so a new lodge can reuse the name; ids are cuids and never reissued, so
+// a deleted lodge cannot reappear. Never undone (undeleting is out of scope).
+model DeletedOtherLodge {
+  id        String   @id
+  name      String
+  deletedAt DateTime @default(now()) @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("deleted_other_lodges")
+}
+
 // ---------------------------------------------------------------------------
 // Communication Portal — the cross-club message board.
 //

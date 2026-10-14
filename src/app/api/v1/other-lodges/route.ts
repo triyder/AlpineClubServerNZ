@@ -14,6 +14,7 @@ import {
   lodgeDetailDiffers,
   normalizeOtherLodgeText,
   otherLodgeOrderBy,
+  otherLodgePullCursor,
   otherLodgeSelect,
   otherLodgeUploadSchema,
   serializeOtherLodgeForClient,
@@ -82,7 +83,10 @@ export async function GET(req: Request) {
 
   // The club's own lodges are read on EVERY pull, whatever `since` says: it is
   // the club's whole current list and not a delta (see the envelope builder).
-  const [lodges, owned] = await Promise.all([
+  // Deletions (#16) ride the same `since`: every tombstone newer than the
+  // club's cursor, or all of them on a pull without one, so a club that was
+  // away still removes every lodge deleted meanwhile.
+  const [lodges, owned, deletedLodges] = await Promise.all([
     prisma.otherLodge.findMany({
       where: {
         ...(since ? { updatedAt: { gt: since } } : {}),
@@ -95,19 +99,21 @@ export async function GET(req: Request) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    prisma.deletedOtherLodge.findMany({
+      where: since ? { deletedAt: { gt: since } } : {},
+      orderBy: { deletedAt: "asc" },
+      select: { id: true, deletedAt: true },
+    }),
   ]);
 
   const serialized = lodges.map(serializeOtherLodgeForClient);
-  // Newest updatedAt across the returned set drives the next incremental pull.
-  // A row whose transaction committed AFTER this query ran but whose
-  // `updatedAt` was stamped BEFORE this cursor would be missed by a strict
-  // `> cursor` pull; the booking site guards against that by overlapping its
-  // next `since` by 60 seconds, and the per-row no-op skip on its side keeps
-  // the re-sent rows harmless.
-  const cursor = serialized.reduce<string | null>(
-    (max, l) => (max === null || l.updatedAt > max ? l.updatedAt : max),
-    null,
-  );
+  // The newest instant across the returned lodges AND deletions drives the
+  // next incremental pull (`otherLodgePullCursor`). A row or tombstone whose
+  // transaction committed AFTER this query ran but was stamped BEFORE this
+  // cursor would be missed by a strict `> cursor` pull; the booking site guards
+  // against that by overlapping its next `since` by 60 seconds, and its merge
+  // treats a re-sent row or deletion as a no-op.
+  const cursor = otherLodgePullCursor(serialized, deletedLodges);
 
   await recordAudit({
     action: "otherLodge.pull",
@@ -115,7 +121,11 @@ export async function GET(req: Request) {
     tokenId: token.id,
     ipAddress: ip,
     userAgent: req.headers.get("user-agent"),
-    metadata: { returned: serialized.length, since: sinceParam ?? null },
+    metadata: {
+      returned: serialized.length,
+      deletions: deletedLodges.length,
+      since: sinceParam ?? null,
+    },
   });
 
   return NextResponse.json(
@@ -123,6 +133,7 @@ export async function GET(req: Request) {
       lodges: serialized,
       cursor,
       ownLodges: owned,
+      deletedLodges,
     }),
   );
 }

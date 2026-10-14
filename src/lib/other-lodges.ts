@@ -735,11 +735,17 @@ export function serializeOtherLodgeForClient(
  * lodges to the central one BY ID (its "Central lodge" setting, and the id the
  * public search asks it about); the name rides along for its dropdown. Both
  * lists are built from the one query, so they cannot disagree.
+ *
+ * `deletedLodges` (API 2.4, #16) lists the lodges deleted since the club's
+ * `since` (every deletion on a pull without one), each as its permanent `id`
+ * and when it was deleted, so the booking site can remove its own copy however
+ * stale its cursor. Oldest first.
  */
 export function buildOtherLodgePullEnvelope(input: {
   lodges: DistributedOtherLodge[];
   cursor: string | null;
   ownLodges: Array<{ id: string; name: string }>;
+  deletedLodges: Array<{ id: string; deletedAt: Date }>;
 }) {
   return {
     lodges: input.lodges,
@@ -747,7 +753,31 @@ export function buildOtherLodgePullEnvelope(input: {
     count: input.lodges.length,
     ownLodgeNames: input.ownLodges.map((l) => l.name),
     ownLodges: input.ownLodges.map((l) => ({ id: l.id, name: l.name })),
+    deletedLodges: input.deletedLodges.map((d) => ({
+      id: d.id,
+      deletedAt: d.deletedAt.toISOString(),
+    })),
   };
+}
+
+/**
+ * The next pull's cursor: the newest instant this pull reported, across the
+ * lodges it returned (`updatedAt`) AND the deletions it returned (`deletedAt`),
+ * so a pull that carried only deletions still moves the cursor past them and a
+ * deletion is never reported to the same club twice. `null` when it returned
+ * nothing. ISO strings compare chronologically, as they are all UTC `Z`.
+ */
+export function otherLodgePullCursor(
+  lodges: ReadonlyArray<{ updatedAt: string }>,
+  deletedLodges: ReadonlyArray<{ deletedAt: Date }>,
+): string | null {
+  let cursor: string | null = null;
+  for (const l of lodges) if (cursor === null || l.updatedAt > cursor) cursor = l.updatedAt;
+  for (const d of deletedLodges) {
+    const at = d.deletedAt.toISOString();
+    if (cursor === null || at > cursor) cursor = at;
+  }
+  return cursor;
 }
 
 /** Longest lodge id a client may quote: the ids are cuids, far shorter. */

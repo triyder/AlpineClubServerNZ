@@ -36,6 +36,8 @@ vi.mock("@/lib/db", () => ({
       update: (...a: unknown[]) => update(...a),
     },
     $transaction: (fn: (t: typeof tx) => unknown) => transaction(fn),
+    // Tombstones (#16): none unless a test says so.
+    deletedOtherLodge: { findMany: async () => [] },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -424,7 +426,14 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
   it("keeps the envelope's existing fields", async () => {
     answer([dbRow()], []);
     const body = await (await GET(req("GET"))).json();
-    expect(Object.keys(body).sort()).toEqual(["count", "cursor", "lodges", "ownLodgeNames", "ownLodges"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "count",
+      "cursor",
+      "deletedLodges",
+      "lodges",
+      "ownLodgeNames",
+      "ownLodges",
+    ]);
     expect(body.count).toBe(1);
   });
 });

@@ -15,6 +15,7 @@ const findUnique = vi.fn();
 const create = vi.fn();
 const update = vi.fn();
 const auditCreate = vi.fn().mockResolvedValue({});
+const tombstones = vi.fn().mockResolvedValue([]);
 vi.mock("@/lib/db", () => ({
   prisma: {
     otherLodge: {
@@ -23,6 +24,8 @@ vi.mock("@/lib/db", () => ({
       create: (...a: unknown[]) => create(...a),
       update: (...a: unknown[]) => update(...a),
     },
+    // Tombstones (#16): none unless a test says so.
+    deletedOtherLodge: { findMany: (...a: unknown[]) => tombstones(...a) },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -120,6 +123,40 @@ describe("GET /api/v1/other-lodges (pull)", () => {
     // Client shape omits internal fields.
     expect(json.lodges[0]).not.toHaveProperty("distribute");
     expect(json.lodges[0]).not.toHaveProperty("sourceClub");
+    expect(json.cursor).toBe("2026-02-01T00:00:00.000Z");
+  });
+
+  it("tells the club about deletions since its cursor, oldest first (#16)", async () => {
+    authenticate.mockResolvedValue(authOk(["lodges:read"]));
+    findMany.mockResolvedValue([]);
+    tombstones.mockResolvedValueOnce([
+      { id: "gone_1", deletedAt: new Date("2026-03-01T00:00:00.000Z") },
+    ]);
+    const res = await GET(req("GET", `${url}?since=2026-02-15T00:00:00.000Z`));
+    const json = await res.json();
+    const [args] = tombstones.mock.calls.at(-1)!;
+    expect(args.where.deletedAt.gt.toISOString()).toBe("2026-02-15T00:00:00.000Z");
+    expect(args.orderBy).toEqual({ deletedAt: "asc" });
+    expect(json.deletedLodges).toEqual([{ id: "gone_1", deletedAt: "2026-03-01T00:00:00.000Z" }]);
+    // A pull that carried only a deletion still moves the cursor past it.
+    expect(json.cursor).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  it("sends EVERY deletion on a pull without a cursor", async () => {
+    authenticate.mockResolvedValue(authOk(["lodges:read"]));
+    findMany.mockResolvedValue([]);
+    await GET(req("GET", url));
+    expect(tombstones.mock.calls.at(-1)![0].where).toEqual({});
+  });
+
+  it("takes the newest of the lodges' and the deletions' instants as the cursor", async () => {
+    authenticate.mockResolvedValue(authOk(["lodges:read"]));
+    findMany.mockResolvedValueOnce([dbRow()]).mockResolvedValueOnce([]);
+    tombstones.mockResolvedValueOnce([
+      { id: "gone_1", deletedAt: new Date("2026-01-10T00:00:00.000Z") },
+    ]);
+    const json = await (await GET(req("GET", url))).json();
+    // dbRow's updatedAt (1 Feb) is newer than the deletion (10 Jan).
     expect(json.cursor).toBe("2026-02-01T00:00:00.000Z");
   });
 
