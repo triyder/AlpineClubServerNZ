@@ -180,6 +180,16 @@ function itemDiffers(
  *   - name owned by other -> skipped (a club can't clobber central or another
  *                            club's entry)
  *
+ * An item that quotes the lodge's `id` (API 2.3) is keyed by that id instead:
+ *   - id of a lodge the club owns -> updated, and RENAMED when `name` differs,
+ *                            unless the new name is held by another lodge
+ *                            (`name-taken`) or only looks like one
+ *                            (`similar-name`); a refused rename writes nothing
+ *   - id owned by other   -> skipped, as for a name
+ *   - id not known        -> skipped (`unknown-id`), never created
+ * A rename moves `updatedAt`, so every other club's next pull carries the new
+ * name under the same id and renames its copy in place.
+ *
  * The whole payload is validated before anything is written, so a bad item
  * makes the whole upload a 400 with no partial effect. The per-item writes
  * are NOT one transaction; the audit row therefore carries the counts reached
@@ -227,32 +237,61 @@ export async function POST(req: Request) {
   let updated = 0;
   let unchanged = 0;
   let skipped = 0;
+  // Of `updated`, how many changed the lodge's name (API 2.3).
+  let renamed = 0;
 
   // Every stored name, loaded once and only when a create needs it, for the
   // lookalike check (see normalizeLodgeNameKey). Application-level and so
   // race-prone by design: a lookalike created concurrently is not caught, only
   // an exact duplicate is (by the unique index, below).
   let knownNames: string[] | null = null;
-  const nameSimilarTo = async (name: string) => {
+  // `ownName` (a rename) is the lodge's current name, which is never a rival.
+  const nameSimilarTo = async (name: string, ownName?: string) => {
     knownNames ??= (
       await prisma.otherLodge.findMany({ select: { name: true } })
     ).map((l) => l.name);
-    return findSimilarLodgeName(name, knownNames);
+    return findSimilarLodgeName(
+      name,
+      ownName === undefined ? knownNames : knownNames.filter((n) => n !== ownName),
+    );
   };
   // A name created by THIS upload counts for the items after it.
   const noteCreated = (name: string) => {
     knownNames?.push(name);
   };
+  // A rename moves a name: the old one is free for the items after it, and
+  // the new one is taken.
+  const noteRenamed = (from: string, to: string) => {
+    if (!knownNames) return;
+    const at = knownNames.indexOf(from);
+    if (at >= 0) knownNames[at] = to;
+    else knownNames.push(to);
+  };
 
   try {
     for (const item of parsed.data.lodges) {
       const name = item.name.trim();
-      const existing = await prisma.otherLodge.findUnique({
-        where: { name },
-        select: otherLodgeSelect,
-      });
+      // API 2.3: an item that quotes the lodge's id is matched BY ID, so its
+      // name may differ (a rename). Without an id, by name, as before.
+      const existing = item.id
+        ? await prisma.otherLodge.findUnique({
+            where: { id: item.id },
+            select: otherLodgeSelect,
+          })
+        : await prisma.otherLodge.findUnique({
+            where: { name },
+            select: otherLodgeSelect,
+          });
 
       const now = new Date();
+      if (!existing && item.id) {
+        // An id this server never issued, or a lodge since deleted. Never a
+        // create: the club believes the lodge exists, and creating it under a
+        // new id would silently fork it.
+        skipped++;
+        results.push({ name, status: "skipped", reason: "unknown-id" });
+        continue;
+      }
       if (!existing) {
         if (await nameSimilarTo(name)) {
           skipped++;
@@ -288,36 +327,78 @@ export async function POST(req: Request) {
           }
         }
       } else if (existing.sourceClubId === club.id) {
+        // A rename (only reachable by id): the new name must be free and must
+        // not merely LOOK like another lodge's, exactly as for a create. The
+        // lodge's own current name is not a rival, so a change of case or
+        // spacing alone is allowed.
+        const renamedFrom = item.id !== undefined && existing.name !== name ? existing.name : null;
+        if (renamedFrom !== null) {
+          const holder = await prisma.otherLodge.findUnique({
+            where: { name },
+            select: { id: true },
+          });
+          if (holder) {
+            skipped++;
+            results.push({ name, status: "skipped", reason: "name-taken" });
+            continue;
+          }
+          if (await nameSimilarTo(name, existing.name)) {
+            skipped++;
+            results.push({ name, status: "skipped", reason: "similar-name" });
+            continue;
+          }
+        }
         const data = itemData(item);
         // Only write (and bump `updatedAt`) when a column actually changed, so an
         // unchanged re-upload does not churn the row or the distribution cursor.
+        // A rename is a change: the moved `updatedAt` is what carries the new
+        // name to every other club's next incremental pull.
         const amenitiesChanged =
           item.amenities !== undefined &&
           amenitiesDiffer(existing.amenities, item.amenities);
-        if (itemDiffers(data, existing) || amenitiesChanged) {
+        if (renamedFrom !== null || itemDiffers(data, existing) || amenitiesChanged) {
           const write = {
             ...data,
+            ...(renamedFrom !== null ? { name } : {}),
             lastUpdatedByClubId: club.id,
             lastUploadedAt: now,
             // Moved explicitly: when only the amenities changed no column above
             // does it, and the incremental pull is keyed on this column.
             updatedAt: now,
           };
-          if (amenitiesChanged && item.amenities) {
-            const amenities = item.amenities;
-            // Row first: its lock serialises the amenity replacement against
-            // any overlapping writer (see replaceAmenities).
-            await prisma.$transaction(async (tx) => {
-              await tx.otherLodge.update({ where: { id: existing.id }, data: write });
-              await replaceAmenities(tx, existing.id, amenities, existing.amenities);
-            });
-          } else {
-            await prisma.otherLodge.update({
-              where: { id: existing.id },
-              data: write,
-            });
+          try {
+            if (amenitiesChanged && item.amenities) {
+              const amenities = item.amenities;
+              // Row first: its lock serialises the amenity replacement against
+              // any overlapping writer (see replaceAmenities).
+              await prisma.$transaction(async (tx) => {
+                await tx.otherLodge.update({ where: { id: existing.id }, data: write });
+                await replaceAmenities(tx, existing.id, amenities, existing.amenities);
+              });
+            } else {
+              await prisma.otherLodge.update({
+                where: { id: existing.id },
+                data: write,
+              });
+            }
+          } catch (error) {
+            // A rename onto a name another writer took since the check above.
+            if (
+              renamedFrom !== null &&
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === "P2002"
+            ) {
+              skipped++;
+              results.push({ name, status: "skipped", reason: "name-taken" });
+              continue;
+            }
+            throw error;
           }
           updated++;
+          if (renamedFrom !== null) {
+            renamed++;
+            noteRenamed(renamedFrom, name);
+          }
           results.push({ name, status: "updated" });
         } else {
           unchanged++;
@@ -346,6 +427,7 @@ export async function POST(req: Request) {
         updated,
         unchanged,
         skipped,
+        renamed,
         total: parsed.data.lodges.length,
         completed: created + updated + unchanged + skipped === parsed.data.lodges.length,
       },

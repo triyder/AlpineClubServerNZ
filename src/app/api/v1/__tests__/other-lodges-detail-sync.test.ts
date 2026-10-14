@@ -278,6 +278,7 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
       updated: 0,
       unchanged: 0,
       skipped: 0,
+      renamed: 0,
       total: 3,
       completed: false,
     });
@@ -522,5 +523,153 @@ describe("non-member rates on the club upload and pull (API 2.2)", () => {
     const res = await GET(req("GET"));
     const lodge = (await res.json()).lodges[0];
     expect(lodge).toMatchObject({ winterRateAdult: 45.5, summerRate5To11: 20, winterRateUnder5: null });
+  });
+});
+
+describe("POST /api/v1/other-lodges (upload) keyed by the lodge's id renames it (API 2.3)", () => {
+  // findUnique is asked by id first, then (for a rename) whether the new name
+  // is held. Route each call by its `where`.
+  function rows(byId: unknown, byName: unknown = null) {
+    findUnique.mockImplementation(async (args: { where: { id?: string; name?: string } }) =>
+      args.where.id !== undefined ? byId : byName,
+    );
+  }
+
+  it("looks the lodge up by id, not by name, when the item carries one", async () => {
+    rows(dbRow());
+    await POST(req("POST", { lodges: [{ id: "l1", name: "Whakapapa Lodge" }] }));
+    expect(findUnique.mock.calls[0][0].where).toEqual({ id: "l1" });
+  });
+
+  it("renames the club's own lodge in place, moving updatedAt so every club's next pull carries it", async () => {
+    rows(dbRow());
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "Iwikau Lodge" }] }));
+    const body = await res.json();
+    expect(body).toMatchObject({ updated: 1, created: 0, skipped: 0 });
+    expect(body.results[0]).toEqual({ name: "Iwikau Lodge", status: "updated" });
+    const call = update.mock.calls[0][0];
+    expect(call.where).toEqual({ id: "l1" });
+    expect(call.data.name).toBe("Iwikau Lodge");
+    expect(call.data.updatedAt).toBeInstanceOf(Date);
+    expect(create).not.toHaveBeenCalled();
+    const audit = auditCreate.mock.calls.at(-1)?.[0].data;
+    expect(JSON.parse(JSON.stringify(audit.metadata))).toMatchObject({ updated: 1, renamed: 1 });
+  });
+
+  it("renames and applies the other changed fields in the same write", async () => {
+    rows(dbRow());
+    await POST(req("POST", { lodges: [{ id: "l1", name: "Iwikau Lodge", bedCapacity: 30 }] }));
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][0].data).toMatchObject({ name: "Iwikau Lodge", bedCapacity: 30 });
+  });
+
+  it("an id with the stored name and nothing changed is 'unchanged' and writes nothing", async () => {
+    rows(dbRow());
+    const res = await POST(
+      req("POST", { lodges: [{ id: "l1", name: "Whakapapa Lodge", bedCapacity: 24 }] }),
+    );
+    expect((await res.json()).unchanged).toBe(1);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename onto a name another lodge holds, writing nothing", async () => {
+    rows(dbRow(), { id: "l2" });
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "Tasman Lodge", bedCapacity: 30 }] }));
+    const body = await res.json();
+    expect(body).toMatchObject({ updated: 0, skipped: 1 });
+    expect(body.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "name-taken" });
+    expect(update).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename onto a name that only LOOKS like another lodge's", async () => {
+    rows(dbRow());
+    findMany.mockResolvedValue([{ name: "Whakapapa Lodge" }, { name: "Tasman Lodge" }]);
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "tasman lodge" }] }));
+    expect((await res.json()).results[0]).toMatchObject({ status: "skipped", reason: "similar-name" });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("allows a rename that only changes the lodge's own case or spacing", async () => {
+    rows(dbRow());
+    findMany.mockResolvedValue([{ name: "Whakapapa Lodge" }, { name: "Tasman Lodge" }]);
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "WHAKAPAPA Lodge" }] }));
+    expect((await res.json()).updated).toBe(1);
+    expect(update.mock.calls[0][0].data.name).toBe("WHAKAPAPA Lodge");
+  });
+
+  it("still catches a real lookalike when the lodge's own name is also similar", async () => {
+    // Own name first in the list: the check must not stop at it.
+    rows(dbRow());
+    findMany.mockResolvedValue([{ name: "Whakapapa Lodge" }, { name: "WHAKAPAPA LODGE " }]);
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "whakapapa lodge" }] }));
+    expect((await res.json()).results[0]).toMatchObject({ reason: "similar-name" });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("a rename that loses a race for the name (P2002) is 'name-taken', not a 500", async () => {
+    rows(dbRow());
+    update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "x" }),
+    );
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "Iwikau Lodge" }] }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).results[0]).toMatchObject({ reason: "name-taken" });
+  });
+
+  it("an unknown id is skipped as unknown-id and is never created", async () => {
+    rows(null);
+    const res = await POST(req("POST", { lodges: [{ id: "gone", name: "Brand New Lodge" }] }));
+    const body = await res.json();
+    expect(body).toMatchObject({ created: 0, skipped: 1 });
+    expect(body.results[0]).toEqual({ name: "Brand New Lodge", status: "skipped", reason: "unknown-id" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["owned centrally", null, "owned-centrally"],
+    ["owned by another club", "club_2", "owned-by-other-club"],
+  ])("cannot rename a lodge %s", async (_l, owner, reason) => {
+    rows(dbRow({ sourceClubId: owner }));
+    const res = await POST(req("POST", { lodges: [{ id: "l1", name: "Hijacked Lodge" }] }));
+    expect((await res.json()).results[0]).toMatchObject({ status: "skipped", reason });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("a name freed by a rename earlier in the same upload is not a lookalike for a later create", async () => {
+    findMany.mockResolvedValue([{ name: "Whakapapa Lodge" }]);
+    findUnique.mockImplementation(async (args: { where: { id?: string } }) =>
+      args.where.id === "l1" ? dbRow() : null,
+    );
+    const res = await POST(
+      req("POST", {
+        lodges: [
+          { name: "Brand New Lodge" }, // loads the known names
+          { id: "l1", name: "Iwikau Lodge" },
+          { name: "whakapapa lodge" }, // the old name is free now
+        ],
+      }),
+    );
+    const body = await res.json();
+    expect(body).toMatchObject({ created: 2, updated: 1, skipped: 0 });
+  });
+
+  it.each([
+    ["an empty id", ""],
+    ["a blank id", "   "],
+    ["an over-long id", "x".repeat(65)],
+    ["a number", 7],
+  ])("400 for %s, writing nothing", async (_l, id) => {
+    const res = await POST(req("POST", { lodges: [{ id, name: "Whakapapa Lodge" }] }));
+    expect(res.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("an item without an id still matches by name, as before 2.3", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 99 }] }));
+    expect(findUnique.mock.calls[0][0].where).toEqual({ name: "Whakapapa Lodge" });
+    expect(update.mock.calls[0][0].data.name).toBeUndefined();
   });
 });

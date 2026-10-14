@@ -750,10 +750,19 @@ export function buildOtherLodgePullEnvelope(input: {
   };
 }
 
+/** Longest lodge id a client may quote: the ids are cuids, far shorter. */
+export const OTHER_LODGE_ID_MAX = 64;
+
 // A single lodge entry a client uploads. Provenance (`sourceClub`) is never
 // accepted from clients; the server stamps it from the authenticated club.
+//
+// `id` (API 2.3) is the lodge's permanent id, as the pull handed it out. With
+// it, the item is matched BY ID, so a different `name` RENAMES the club's lodge
+// rather than creating a second one; without it, the item is matched by name
+// exactly as before.
 export const otherLodgeUploadItemSchema = z
   .object({
+    id: z.string().trim().min(1).max(OTHER_LODGE_ID_MAX).optional(),
     name: lodgeNameField,
     ...lodgeContactShape,
     ...lodgeDetailShape,

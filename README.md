@@ -392,6 +392,18 @@ without a version change).
    application and a lookalike created in the same instant can slip past it.
    The whole payload is validated before anything is written; a bad item
    makes the whole upload a `400`.
+
+   **Renaming (API 2.3).** An entry may also carry the lodge's permanent `id`
+   (as the pull returned it). It is then keyed **by that id**, so a different
+   `name` **renames** the club's own lodge instead of creating a second one.
+   The rename moves the lodge's `updatedAt`, so every other club's next
+   incremental pull carries the new name under the same id, and the booking
+   site renames its copy in place. A rename is refused (skipped, nothing
+   written) with `name-taken` when another lodge holds the new name, or
+   `similar-name` when the new name only looks like another lodge's; a change
+   of case or spacing to the lodge's own name is allowed. An id the server
+   does not know is skipped as `unknown-id` and is **never** created. An entry
+   without an `id` behaves exactly as before.
 2. A **central admin** can add and edit entries at `/lodges`; nothing needs to
    be ticked for an entry to be shared. The same lookalike-name rule applies
    there (a `409` naming the existing lodge).
