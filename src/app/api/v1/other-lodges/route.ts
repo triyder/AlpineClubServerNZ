@@ -202,8 +202,9 @@ function itemDiffers(
  * An item without an `id` (a lodge the club has not uploaded before, or a
  * pre-2.3 client) is matched against the club's OWN lodges of exactly that
  * name: exactly one live one -> that lodge, as if its id had been quoted
- * (never renamed). None live but one deleted -> skipped `deleted`. Otherwise
- * it is CREATED, even when another lodge already has that name.
+ * (never renamed). None live but one deleted -> skipped `deleted`. Several
+ * live -> skipped `ambiguous-name` (the item must quote an id). None at all
+ * -> CREATED, even when another club's lodge already has that name.
  *
  * A lodge an admin deleted (#16) is skipped as `deleted`: it is kept for the
  * bookings that cite it and never changed again. A rename moves `updatedAt`,
@@ -262,10 +263,16 @@ export async function POST(req: Request) {
   let skipped = 0;
   // Of `updated`, how many changed the lodge's name (API 2.3).
   let renamed = 0;
+  // Which lodges this upload created and renamed (#69): names may repeat, so
+  // the audit row names them by id for an administrator to review.
+  const createdLodges: Array<{ id: string; name: string }> = [];
+  const renamedLodges: Array<{ id: string; from: string; to: string }> = [];
 
   // An item without an id (#69): the club's own lodge of exactly that name,
   // when there is just one live one. A deleted one is reported (so a
-  // pre-2.3 client cannot resurrect it by name); anything else is a create.
+  // pre-2.3 client cannot resurrect it by name); several live ones cannot be
+  // told apart and are reported too (`ambiguous`), so a retried item does not
+  // add another copy each time. None at all is a create.
   const ownLodgeByName = async (name: string) => {
     const rows = await prisma.otherLodge.findMany({
       where: { name, sourceClubId: club.id },
@@ -273,8 +280,9 @@ export async function POST(req: Request) {
       orderBy: { createdAt: "asc" },
     });
     const live = rows.filter((r) => !r.deletedAt);
+    if (live.length > 1) return "ambiguous" as const;
     if (live.length === 1) return live[0];
-    if (live.length === 0 && rows.length > 0) return rows[0];
+    if (rows.length > 0) return rows[0];
     return null;
   };
 
@@ -287,6 +295,11 @@ export async function POST(req: Request) {
             select: otherLodgeSelect,
           })
         : await ownLodgeByName(name);
+      if (existing === "ambiguous") {
+        skipped++;
+        results.push({ name, status: "skipped", reason: "ambiguous-name" });
+        continue;
+      }
 
       const now = new Date();
       // A deleted lodge (#16) is never changed again: the club is told, and
@@ -318,6 +331,7 @@ export async function POST(req: Request) {
           select: { id: true },
         });
         created++;
+        createdLodges.push({ id: row.id, name });
         results.push({ id: row.id, name, status: "created" });
       } else if (existing.sourceClubId === club.id) {
         // A rename is only reachable by id; a name match is the same name.
@@ -366,7 +380,10 @@ export async function POST(req: Request) {
             throw error;
           }
           updated++;
-          if (renamedFrom !== null) renamed++;
+          if (renamedFrom !== null) {
+            renamed++;
+            renamedLodges.push({ id: existing.id, from: renamedFrom, to: name });
+          }
           results.push({ id: existing.id, name, status: "updated" });
         } else {
           unchanged++;
@@ -397,6 +414,8 @@ export async function POST(req: Request) {
         unchanged,
         skipped,
         renamed,
+        createdLodges,
+        renamedLodges,
         total: parsed.data.lodges.length,
         completed: created + updated + unchanged + skipped === parsed.data.lodges.length,
       },

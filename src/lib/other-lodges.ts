@@ -435,7 +435,7 @@ export function findSimilarLodgeName(
 }
 
 export function similarLodgeNameMessage(existing: string): string {
-  return `Another lodge is already called "${existing}". Save anyway?`;
+  return `A lodge called "${existing}" (or a name that looks the same) already exists. Save anyway?`;
 }
 
 /**

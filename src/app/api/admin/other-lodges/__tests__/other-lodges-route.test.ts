@@ -145,7 +145,7 @@ describe("POST /api/admin/other-lodges", () => {
     const res = await POST(jsonReq({ name: "Ruapehu Lodge" }));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
-      error: 'Another lodge is already called "Ruapehu Lodge". Save anyway?',
+      error: 'A lodge called "Ruapehu Lodge" (or a name that looks the same) already exists. Save anyway?',
       code: "similar-name",
       similarTo: "Ruapehu Lodge",
     });

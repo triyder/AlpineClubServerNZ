@@ -285,7 +285,7 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
 
   it("still writes the upload audit row, with the counts so far, when a later item fails", async () => {
     findUnique.mockResolvedValue(null);
-    create.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("connection lost"));
+    create.mockResolvedValueOnce({ id: "new_1" }).mockRejectedValueOnce(new Error("connection lost"));
     await expect(
       POST(req("POST", { lodges: [{ name: "One" }, { name: "Two" }, { name: "Three" }] })),
     ).rejects.toThrow("connection lost");
@@ -298,6 +298,9 @@ describe("POST /api/v1/other-lodges (upload) with the new fields", () => {
       unchanged: 0,
       skipped: 0,
       renamed: 0,
+      // What it created so far, by id (#69: names may repeat).
+      createdLodges: [{ id: "new_1", name: "One" }],
+      renamedLodges: [],
       total: 3,
       completed: false,
     });
@@ -332,12 +335,14 @@ describe("POST /api/v1/other-lodges (upload): two lodges may share a name (#69, 
     expect(findUnique.mock.calls[0][0].where).toEqual({ name: "Kea Lodge", sourceClubId: "club_1" });
   });
 
-  it("creates when the club owns two live lodges of that name (it cannot tell which)", async () => {
+  it("skips, never creates, when the club owns two live lodges of that name (it cannot tell which)", async () => {
     ownRows = [dbRow({ id: "l1" }), dbRow({ id: "l2" })];
     const body = await (
       await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 99 }] }))
     ).json();
-    expect(body).toMatchObject({ created: 1, updated: 0 });
+    expect(body).toMatchObject({ created: 0, updated: 0, skipped: 1 });
+    expect(body.results[0]).toEqual({ name: "Whakapapa Lodge", status: "skipped", reason: "ambiguous-name" });
+    expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -611,7 +616,11 @@ describe("POST /api/v1/other-lodges (upload) keyed by the lodge's id renames it 
     expect(call.data.updatedAt).toBeInstanceOf(Date);
     expect(create).not.toHaveBeenCalled();
     const audit = auditCreate.mock.calls.at(-1)?.[0].data;
-    expect(JSON.parse(JSON.stringify(audit.metadata))).toMatchObject({ updated: 1, renamed: 1 });
+    expect(JSON.parse(JSON.stringify(audit.metadata))).toMatchObject({
+      updated: 1,
+      renamed: 1,
+      renamedLodges: [{ id: "l1", from: "Whakapapa Lodge", to: "Iwikau Lodge" }],
+    });
   });
 
   it("renames and applies the other changed fields in the same write", async () => {

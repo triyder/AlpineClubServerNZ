@@ -389,10 +389,13 @@ without a version change).
    (API 2.5, #69): two lodges may share a name, and the permanent `id` is what
    tells them apart. An entry without an `id` is matched against the club's
    **own** lodges of exactly that name: when there is exactly one, it is that
-   lodge and is updated; when there is none (or several), a new lodge is
-   created, even if another club's lodge has the same name. Each result
-   carries the lodge's `id`, a `status` and, when skipped, a `reason`:
-   `owned-centrally`, `owned-by-other-club`, `unknown-id` or `deleted`. The
+   lodge and is updated; when there are several it is skipped as
+   `ambiguous-name` (quote the id); when there is none, a new lodge is
+   created, even if another club's lodge has the same name. There is exactly
+   one result per entry, **in the order sent**, and each carries the lodge's
+   `id` (when it has one), the `name`, a `status` and, when skipped, a `reason`:
+   `owned-centrally`, `owned-by-other-club`, `unknown-id`, `deleted` or
+   `ambiguous-name`. The
    club records the `id` of each lodge it created and quotes it from then on.
    The whole payload is validated before anything is written; a bad item
    makes the whole upload a `400`.
@@ -410,8 +413,8 @@ without a version change).
    be ticked for an entry to be shared. A name another live lodge already has,
    or one that differs from it only by case, spacing, invisible characters or
    full-width letters, is allowed but asked about first: the request gets a
-   `409` with `code: "similar-name"`, the page asks "Another lodge is already
-   called X. Save anyway?", and resends with `allowSimilarName: true`.
+   `409` with `code: "similar-name"`, the page asks whether to save anyway,
+   and resends with `allowSimilarName: true`.
 3. Every connected club **pulls** the registry: `GET /api/v1/other-lodges`
    returns every entry. Pass `?since=<ISO>` for an incremental pull; use the
    response `cursor` as the next `since`. The cursor is the newest `updatedAt`
