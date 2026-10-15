@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { ImagePicker } from "@/components/image-picker";
 import type { LodgeImageRef } from "@/lib/image-library";
+import { seasonDatesProblem } from "@/lib/lodge-seasons";
 import {
   AMENITIES_PER_LODGE_MAX,
   AMENITY_DESCRIPTION_MAX,
@@ -45,6 +46,14 @@ const BOOLEAN_FIELDS = LODGE_BOOLEAN_FIELDS.map((key) => ({
 
 // The rate grid: a row per season, a column per guideline age group. Typed
 // over the field list, so a rate field missing from the grid is a type error.
+/** The season date fields, in the order they are shown (two per row). */
+const SEASON_DATE_FIELDS = [
+  { key: "winterSeasonStart", id: "ol-winter-start", label: "Winter season start date" },
+  { key: "winterSeasonEnd", id: "ol-winter-end", label: "Winter season end date" },
+  { key: "summerSeasonStart", id: "ol-summer-start", label: "Summer season start date" },
+  { key: "summerSeasonEnd", id: "ol-summer-end", label: "Summer season end date" },
+] as const;
+
 const RATE_AGE_GROUPS = ["Under 5", "5–12", "13–17", "18+"] as const;
 const RATE_GRID: ReadonlyArray<{
   season: string;
@@ -79,7 +88,9 @@ type FormState = {
   roomType: "ROOM" | "DORMITORY" | "";
   cancellationPeriod: string;
   winterSeasonStart: string;
+  winterSeasonEnd: string;
   summerSeasonStart: string;
+  summerSeasonEnd: string;
   flags: Record<LodgeBooleanField, boolean>;
   rates: Record<LodgeRateField, string>;
   amenities: AmenityRow[];
@@ -109,7 +120,9 @@ const emptyForm: FormState = {
   roomType: "",
   cancellationPeriod: "",
   winterSeasonStart: "",
+  winterSeasonEnd: "",
   summerSeasonStart: "",
+  summerSeasonEnd: "",
   flags: emptyFlags,
   rates: emptyRates,
   amenities: [],
@@ -133,7 +146,9 @@ function formFromLodge(lodge: SerializedOtherLodge): FormState {
     roomType: lodge.roomType ?? "",
     cancellationPeriod: lodge.cancellationPeriod ?? "",
     winterSeasonStart: lodge.winterSeasonStart ?? "",
+    winterSeasonEnd: lodge.winterSeasonEnd ?? "",
     summerSeasonStart: lodge.summerSeasonStart ?? "",
+    summerSeasonEnd: lodge.summerSeasonEnd ?? "",
     flags: Object.fromEntries(
       LODGE_BOOLEAN_FIELDS.map((key) => [key, lodge[key]]),
     ) as Record<LodgeBooleanField, boolean>,
@@ -176,7 +191,9 @@ function formPayload(form: FormState) {
     roomType: form.roomType || null,
     cancellationPeriod: form.cancellationPeriod.trim() || null,
     winterSeasonStart: form.winterSeasonStart || null,
+    winterSeasonEnd: form.winterSeasonEnd || null,
     summerSeasonStart: form.summerSeasonStart || null,
+    summerSeasonEnd: form.summerSeasonEnd || null,
     ...form.flags,
     ...(Object.fromEntries(
       LODGE_RATE_FIELDS.map((key) => [key, countOrNull(form.rates[key])]),
@@ -295,6 +312,17 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
       named.length
     ) {
       setError("Amenity names must be different from each other.");
+      return;
+    }
+    // The same season rules the server applies (`@/lib/lodge-seasons`).
+    const seasonProblem = seasonDatesProblem({
+      winterSeasonStart: form.winterSeasonStart || null,
+      winterSeasonEnd: form.winterSeasonEnd || null,
+      summerSeasonStart: form.summerSeasonStart || null,
+      summerSeasonEnd: form.summerSeasonEnd || null,
+    });
+    if (seasonProblem) {
+      setError(seasonProblem);
       return;
     }
     setSaving(true);
@@ -565,34 +593,20 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                   ))}
                 </div>
               </fieldset>
-              <div className="space-y-2">
-                <Label htmlFor="ol-winter-start">Winter season start date</Label>
-                <Input
-                  id="ol-winter-start"
-                  type="date"
-                  value={form.winterSeasonStart}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      winterSeasonStart: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ol-summer-start">Summer season start date</Label>
-                <Input
-                  id="ol-summer-start"
-                  type="date"
-                  value={form.summerSeasonStart}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      summerSeasonStart: e.target.value,
-                    }))
-                  }
-                />
-              </div>
+              {/* Each season's start and end (16 Oct 2026). They recur every
+                  year: only the day and month count. The end is the season's
+                  last day; without one the season runs to the other's start. */}
+              {SEASON_DATE_FIELDS.map(({ key, id, label }) => (
+                <div key={key} className="space-y-2">
+                  <Label htmlFor={id}>{label}</Label>
+                  <Input
+                    id={id}
+                    type="date"
+                    value={form[key]}
+                    onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
             </div>
 
             <fieldset className="space-y-2">

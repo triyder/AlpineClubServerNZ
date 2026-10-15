@@ -63,7 +63,9 @@ export const LODGE_TEXT_FIELDS = [
 ] as const;
 export const LODGE_DATE_FIELDS = [
   "winterSeasonStart",
+  "winterSeasonEnd",
   "summerSeasonStart",
+  "summerSeasonEnd",
 ] as const;
 
 /** Whole-number detail columns: bed counts and the walk to the lodge. */
@@ -215,6 +217,23 @@ export type SerializedLodgeDetail = { [K in LodgeTextField]: string | null } & {
 } & { amenities: LodgeAmenity[] };
 
 /** `YYYY-MM-DD` for a DATE column (read back as UTC midnight), or null. */
+/**
+ * The season dates a write would leave stored: each date the write carries
+ * (`null` clears it), else the row's. What `seasonDatesProblem`
+ * (`@/lib/lodge-seasons`) checks before an admin save or a club upload.
+ */
+export function seasonDatesAfter(
+  stored: Partial<Record<LodgeDateField, Date | null>> | null,
+  incoming: Partial<Record<LodgeDateField, string | null | undefined>>,
+): Record<LodgeDateField, string | null> {
+  return Object.fromEntries(
+    LODGE_DATE_FIELDS.map((key) => [
+      key,
+      incoming[key] !== undefined ? (incoming[key] ?? null) : formatLodgeDate(stored?.[key] ?? null),
+    ]),
+  ) as Record<LodgeDateField, string | null>;
+}
+
 export function formatLodgeDate(date: Date | null): string | null {
   return date ? date.toISOString().slice(0, 10) : null;
 }

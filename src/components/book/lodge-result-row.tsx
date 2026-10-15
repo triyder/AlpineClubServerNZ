@@ -3,6 +3,7 @@
 import { useId, type Ref } from "react";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { seasonSpanText } from "@/lib/lodge-seasons";
 import { LODGE_FACILITY_LABELS } from "@/lib/other-lodges";
 import {
   AGE_GROUPS,
@@ -205,8 +206,13 @@ export function LodgeResultRow({
               <tbody>
                 {(["winter", "summer"] as const).map((season) => (
                   <tr key={season}>
-                    <th scope="row" className="py-1 pr-2 text-left font-normal capitalize">
-                      {season}
+                    <th scope="row" className="py-1 pr-2 text-left font-normal">
+                      <span className="capitalize">{season}</span>
+                      {seasonSpanText(lodge, season) ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {seasonSpanText(lodge, season)}
+                        </span>
+                      ) : null}
                     </th>
                     {AGE_GROUPS.map((g) => (
                       <td key={g.key} className="py-1 pr-2 tabular-nums">
@@ -227,7 +233,9 @@ export function LodgeResultRow({
               </>
             ) : (
               <span className="text-muted-foreground">
-                No estimate: this lodge has not given every rate or season date needed.
+                {estimate.missing === "out-of-season"
+                  ? "Price not available for these dates: they are outside this lodge's winter and summer seasons."
+                  : "No estimate: this lodge has not given every rate or season date needed."}
               </span>
             )}
           </p>

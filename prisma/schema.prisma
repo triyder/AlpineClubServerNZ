@@ -254,7 +254,12 @@ model OtherLodge {
   dinnerIncluded       Boolean   @default(false) @map("dinner_included")
   cancellationPeriod   String?   @map("cancellation_period") @db.VarChar(200)
   winterSeasonStart    DateTime? @map("winter_season_start") @db.Date
+  // A season's LAST day (16 Oct 2026). Seasons recur: only month and day are
+  // used. Unset, the season runs up to the other season's start
+  // (src/lib/lodge-seasons.ts holds the rules).
+  winterSeasonEnd      DateTime? @map("winter_season_end") @db.Date
   summerSeasonStart    DateTime? @map("summer_season_start") @db.Date
+  summerSeasonEnd      DateTime? @map("summer_season_end") @db.Date
 
   // Non-member rates per person per night, NZD incl. GST, for the public
   // booking search. Display only: nothing is charged here. Guideline age

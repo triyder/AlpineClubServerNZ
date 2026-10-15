@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { seasonDatesProblem } from "@/lib/lodge-seasons";
 import { enforceClientApiVersion } from "@/lib/api-version-gate";
 import { authenticateApiRequest, clientIp, hasScope } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -16,6 +17,7 @@ import {
   otherLodgeOrderBy,
   otherLodgePullCursor,
   otherLodgeSelect,
+  seasonDatesAfter,
   otherLodgeUploadSchema,
   serializeOtherLodgeForClient,
   type LodgeDetailColumns,
@@ -307,6 +309,13 @@ export async function POST(req: Request) {
       if (existing?.deletedAt) {
         skipped++;
         results.push({ id: existing.id, name, status: "skipped", reason: "deleted" });
+        continue;
+      }
+      // The seasons as this item would leave them (its dates over the stored
+      // row's): two that share a day are refused for this lodge, `seasons`.
+      if (seasonDatesProblem(seasonDatesAfter(existing, item))) {
+        skipped++;
+        results.push({ ...(existing ? { id: existing.id } : {}), name, status: "skipped", reason: "seasons" });
         continue;
       }
       if (!existing && item.id) {

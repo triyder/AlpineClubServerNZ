@@ -72,7 +72,9 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   dinnerIncluded: false,
   cancellationPeriod: null,
   winterSeasonStart: null,
+  winterSeasonEnd: null,
   summerSeasonStart: null,
+  summerSeasonEnd: null,
   amenities: [] as Array<{ name: string; description: string | null }>,
   sourceClubId: null,
   sourceClub: null,
@@ -296,5 +298,54 @@ describe("non-member rates on the admin routes", () => {
     expect(data).not.toHaveProperty("winterRateAdult");
     const body = await res.json();
     expect(body.otherLodge).toMatchObject({ summerRate12To17: 30.1, winterRateAdult: null });
+  });
+});
+
+describe("season end dates on the admin routes (16 Oct 2026)", () => {
+  const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+
+  it("POST stores the end dates and refuses overlapping seasons with a message, writing nothing", async () => {
+    create.mockResolvedValue(dbRow());
+    const ok = await POST(
+      jsonReq(
+        {
+          name: "X",
+          winterSeasonStart: "2026-06-01",
+          winterSeasonEnd: "2026-09-30",
+          summerSeasonStart: "2026-12-01",
+          summerSeasonEnd: "2027-03-31",
+        },
+        "POST",
+      ),
+    );
+    expect(ok.status).toBe(201);
+    expect(create.mock.calls[0][0].data.winterSeasonEnd.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+
+    create.mockClear();
+    const bad = await POST(
+      jsonReq({ name: "Y", winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-12-15", summerSeasonStart: "2026-12-01" }, "POST"),
+    );
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toMatch(/overlap: both include 1 December/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("PATCH checks the seasons as they would be stored: this request's dates over the row's", async () => {
+    findUnique.mockResolvedValue(
+      dbRow({ winterSeasonStart: d("2026-06-01"), summerSeasonStart: d("2026-12-01"), summerSeasonEnd: d("2027-03-31") }),
+    );
+    // Only the winter END is sent; with the stored summer start it overlaps.
+    const res = await PATCH(jsonReq({ winterSeasonEnd: "2026-12-10" }, "PATCH"), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/overlap/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("PATCH accepts an end that fits, and writes it", async () => {
+    findUnique.mockResolvedValue(dbRow({ winterSeasonStart: d("2026-06-01"), summerSeasonStart: d("2026-12-01") }));
+    update.mockResolvedValue(dbRow());
+    const res = await PATCH(jsonReq({ winterSeasonEnd: "2026-09-30" }, "PATCH"), ctx);
+    expect(res.status).toBe(200);
+    expect(update.mock.calls[0][0].data.winterSeasonEnd.toISOString()).toBe("2026-09-30T00:00:00.000Z");
   });
 });

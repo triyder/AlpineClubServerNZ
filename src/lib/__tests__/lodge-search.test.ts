@@ -33,7 +33,9 @@ function lodge(over: Partial<PublicLodge> = {}): PublicLodge {
     amenities: [],
     rates: noRates,
     winterSeasonStart: null,
+    winterSeasonEnd: null,
     summerSeasonStart: null,
+    summerSeasonEnd: null,
     picture: null,
     ...over,
   };
@@ -124,18 +126,18 @@ describe("seasonForNight", () => {
     // Seasons recur: the start dates' year is ignored.
     ["2028-07-04", "winter"],
   ])("%s is %s", (night, season) => {
-    expect(seasonForNight(night, W, S)).toBe(season);
+    expect(seasonForNight(night, { winterSeasonStart: W, summerSeasonStart: S })).toBe(season);
   });
 
   it("handles a winter that starts later in the year than summer", () => {
-    expect(seasonForNight("2026-12-15", "2026-12-01", "2026-03-01")).toBe("winter");
-    expect(seasonForNight("2026-02-10", "2026-12-01", "2026-03-01")).toBe("winter");
-    expect(seasonForNight("2026-05-01", "2026-12-01", "2026-03-01")).toBe("summer");
+    expect(seasonForNight("2026-12-15", { winterSeasonStart: "2026-12-01", summerSeasonStart: "2026-03-01" })).toBe("winter");
+    expect(seasonForNight("2026-02-10", { winterSeasonStart: "2026-12-01", summerSeasonStart: "2026-03-01" })).toBe("winter");
+    expect(seasonForNight("2026-05-01", { winterSeasonStart: "2026-12-01", summerSeasonStart: "2026-03-01" })).toBe("summer");
   });
 
   it("is null without both season dates", () => {
-    expect(seasonForNight("2026-07-01", W, null)).toBeNull();
-    expect(seasonForNight("2026-07-01", null, S)).toBeNull();
+    expect(seasonForNight("2026-07-01", { winterSeasonStart: W, summerSeasonStart: null })).toBeNull();
+    expect(seasonForNight("2026-07-01", { winterSeasonStart: null, summerSeasonStart: S })).toBeNull();
   });
 });
 
@@ -172,10 +174,23 @@ describe("estimateStay", () => {
       lodge({ ...seasons, rates }),
       query({ guests: { under5: 1, age5to11: 0, age12to17: 0, adults: 2 } }),
     );
-    expect(est).toEqual({ nights: 2, total: null });
+    expect(est).toEqual({ nights: 2, total: null, missing: "incomplete" });
+  });
+
+  it("says a stay in the gap between seasons is out of season (#season end dates)", () => {
+    const gapLodge = lodge({
+      rates,
+      winterSeasonStart: "2026-06-01",
+      winterSeasonEnd: "2026-09-30",
+      summerSeasonStart: "2026-12-01",
+      summerSeasonEnd: "2027-03-31",
+    });
+    const est = estimateStay(gapLodge, query({ checkIn: "2026-10-10", checkOut: "2026-10-12" }));
+    expect(est).toEqual({ nights: 2, total: null, missing: "out-of-season" });
   });
 
   it("has no total without season dates", () => {
+    expect(estimateStay(lodge({ rates }), query()).missing).toBe("incomplete");
     expect(estimateStay(lodge({ rates }), query()).total).toBeNull();
   });
 

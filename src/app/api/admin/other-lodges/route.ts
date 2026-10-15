@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { seasonDatesProblem } from "@/lib/lodge-seasons";
 import { guardAdminSession, guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
@@ -12,6 +13,7 @@ import {
   otherLodgeCreateSchema,
   otherLodgeOrderBy,
   otherLodgeSelect,
+  seasonDatesAfter,
   liveOtherLodgeWhere,
   serializeOtherLodge,
   SIMILAR_LODGE_NAME_CODE,
@@ -57,6 +59,12 @@ export async function POST(req: Request) {
       { error: "Invalid input", details: parsed.error.flatten() },
       { status: 400 },
     );
+  }
+
+  // The seasons as they will be used (`@/lib/lodge-seasons`): no overlap.
+  const seasonProblem = seasonDatesProblem(seasonDatesAfter(null, parsed.data));
+  if (seasonProblem) {
+    return NextResponse.json({ error: seasonProblem }, { status: 400 });
   }
 
   const pictureError = await validateLodgePictures(parsed.data);

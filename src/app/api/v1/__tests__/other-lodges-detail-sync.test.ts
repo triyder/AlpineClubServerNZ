@@ -92,7 +92,9 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   dinnerIncluded: false,
   cancellationPeriod: null,
   winterSeasonStart: null,
+  winterSeasonEnd: null,
   summerSeasonStart: null,
+  summerSeasonEnd: null,
   amenities: [] as Array<{ name: string; description: string | null }>,
   sourceClubId: "club_1",
   sourceClub: null,
@@ -698,5 +700,38 @@ describe("POST /api/v1/other-lodges (upload) keyed by the lodge's id renames it 
     await POST(req("POST", { lodges: [{ name: "Whakapapa Lodge", bedCapacity: 99 }] }));
     expect(findUnique.mock.calls[0][0].where).toEqual({ name: "Whakapapa Lodge", sourceClubId: "club_1" });
     expect(update.mock.calls[0][0].data.name).toBeUndefined();
+  });
+});
+
+describe("POST /api/v1/other-lodges (upload): season end dates (API 2.6)", () => {
+  it("stores the end dates the item carries", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    const res = await POST(
+      req("POST", {
+        lodges: [{ id: "l1", name: "Whakapapa Lodge", winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-09-30" }],
+      }),
+    );
+    expect((await res.json()).updated).toBe(1);
+    expect(update.mock.calls[0][0].data.winterSeasonEnd.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+  });
+
+  it("skips a lodge whose seasons would overlap (its dates over the stored ones), and goes on", async () => {
+    findUnique.mockImplementation(async (args: { where: { id?: string } }) =>
+      args.where.id === "l1"
+        ? dbRow({ summerSeasonStart: new Date("2026-12-01T00:00:00.000Z") })
+        : dbRow({ id: "l2", name: "Tasman Lodge" }),
+    );
+    const res = await POST(
+      req("POST", {
+        lodges: [
+          { id: "l1", name: "Whakapapa Lodge", winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-12-20" },
+          { id: "l2", name: "Tasman Lodge", bedCapacity: 30 },
+        ],
+      }),
+    );
+    const body = await res.json();
+    expect(body.results[0]).toEqual({ id: "l1", name: "Whakapapa Lodge", status: "skipped", reason: "seasons" });
+    expect(body.results[1]).toMatchObject({ id: "l2", status: "updated" });
+    expect(update).toHaveBeenCalledTimes(1);
   });
 });

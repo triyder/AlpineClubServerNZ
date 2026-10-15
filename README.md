@@ -174,7 +174,7 @@ before anything is written rather than a database error part-way through an
 upload.
 | `requiresLodgeCustodian`, `freeWifi`, `quietRoom`, `dryingRoom`, `sharedKitchen`, `wheelchairAccessible`, `breakfastIncluded`, `lunchIncluded`, `dinnerIncluded`, `skiWorkshopArea`, `gamesRoom` | yes/no | Default **no**; "not known" and "no" are not distinguished. |
 | `cancellationPeriod` | text (200) | Free text. |
-| `winterSeasonStart`, `summerSeasonStart` | date | A calendar date with a year, `YYYY-MM-DD`; never shifted by time zone. |
+| `winterSeasonStart`, `winterSeasonEnd`, `summerSeasonStart`, `summerSeasonEnd` | date | A calendar date with a year, `YYYY-MM-DD`; never shifted by time zone. Each season is its start to its end (the end is the season's **last day**, ends added in **2.6**). Seasons **recur**: only the day and month are used, and a season may cross New Year. A season with no end runs up to the other season's start. The two seasons may not share a day: an admin save is refused with a message, and an upload skips that lodge as `seasons`. The rules live in [`src/lib/lodge-seasons.ts`](src/lib/lodge-seasons.ts). |
 | `amenities` | list | `{ name, description? }`, at most 50 per lodge, names unique ignoring case. |
 
 On the API, `amenities` **replaces the lodge's whole set** when present in an
@@ -275,7 +275,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | ------------ | ------------- | -------------------------------------------------------------- |
 | `/login`     | public        | Email + password sign-in.                                      |
 | `/register`  | public        | Lodge submits a link request.                                  |
-| `/book`      | public        | **Find a lodge** — guests search the registry by dates, guests (under 5 / 5–12 / 13–17 / 18+) and facilities, expand a lodge for its amenities, non-member rates and an estimated total, and press **Book now** to go to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). This server never makes a booking. Shows only public lodge fields; rate-limited per IP. Free beds are asked live of each lodge's club booking site and never stored (see *Free beds on the public lodge search*). |
+| `/book`      | public        | **Find a lodge** — guests search the registry by dates, guests (under 5 / 5–12 / 13–17 / 18+) and facilities, expand a lodge for its amenities, non-member rates (with each season's dates) and an estimated total priced night by night at each night's season (a stay with a night outside both seasons shows "Price not available for these dates"), and press **Book now** to go to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). This server never makes a booking. Shows only public lodge fields; rate-limited per IP. Free beds are asked live of each lodge's club booking site and never stored (see *Free beds on the public lodge search*). |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager), and see the **API version each club last reported** — up to date, behind (its site must be upgraded), newer than this server, or not reported — with when it last checked. |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |
@@ -366,7 +366,9 @@ both directions until the club is upgraded.
   `2.4` adds `deletedLodges` to the pull (logical deletes). `2.5` (#69) lets
   two lodges share a name: upload results carry each lodge's `id`, the
   `name-taken`, `similar-name` and `conflict` refusals are gone, and the pull
-  drops `ownLodgeNames`.
+  drops `ownLodgeNames`. `2.6` adds each season's end date
+  (`winterSeasonEnd`, `summerSeasonEnd`) to the lodge upload and pull, and an
+  upload skips a lodge whose seasons would overlap (`seasons`).
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
@@ -404,8 +406,9 @@ without a version change).
    created, even if another club's lodge has the same name. There is exactly
    one result per entry, **in the order sent**, and each carries the lodge's
    `id` (when it has one), the `name`, a `status` and, when skipped, a `reason`:
-   `owned-centrally`, `owned-by-other-club`, `unknown-id`, `deleted` or
-   `ambiguous-name`. The
+   `owned-centrally`, `owned-by-other-club`, `unknown-id`, `deleted`,
+   `ambiguous-name` or `seasons` (its winter and summer seasons, as the item
+   would leave them, share a day). The
    club records the `id` of each lodge it created and quotes it from then on.
    The whole payload is validated before anything is written; a bad item
    makes the whole upload a `400`.
