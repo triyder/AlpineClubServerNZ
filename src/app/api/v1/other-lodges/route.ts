@@ -9,7 +9,6 @@ import {
   amenitiesDiffer,
   amenityCreateRows,
   buildOtherLodgePullEnvelope,
-  findSimilarLodgeName,
   lodgeDetailColumns,
   lodgeDetailDiffers,
   normalizeOtherLodgeText,
@@ -188,26 +187,30 @@ function itemDiffers(
 /**
  * POST /api/v1/other-lodges — UPLOAD from a connected club.
  *
- * A club pushes its "Other lodges" entries. Each is keyed by unique `name` and
- * OWNED by the uploading club:
- *   - new name           -> created (sourceClub = this club), unless it only
- *                            LOOKS like an existing name (`similar-name`)
- *   - name owned by club  -> updated (every field the item carries: contact,
- *                            capacity, the detail fields and the amenity set)
- *   - name owned by other -> skipped (a club can't clobber central or another
- *                            club's entry)
+ * A club pushes its "Other lodges" entries, each OWNED by the uploading club.
+ * Names are not unique (#69, API 2.5): two lodges may share a name, and the
+ * `id` is what tells them apart.
  *
- * An item that quotes the lodge's `id` (API 2.3) is keyed by that id instead:
- *   - id of a lodge the club owns -> updated, and RENAMED when `name` differs,
- *                            unless the new name is held by another lodge
- *                            (`name-taken`) or only looks like one
- *                            (`similar-name`); a refused rename writes nothing
- *   - id owned by other   -> skipped, as for a name
+ * An item that quotes the lodge's `id` (API 2.3) is matched BY THAT ID only:
+ *   - id of a lodge the club owns -> updated (every field the item carries:
+ *                            contact, capacity, the detail fields and the
+ *                            amenity set), and RENAMED when `name` differs
+ *   - id owned by other   -> skipped (a club can't clobber central or another
+ *                            club's entry)
  *   - id not known        -> skipped (`unknown-id`), never created
- * A lodge an admin deleted (#16), matched by id or by name, is skipped as
- * `deleted`: it is kept for the bookings that cite it and never changed again.
- * A rename moves `updatedAt`, so every other club's next pull carries the new
- * name under the same id and renames its copy in place.
+ *
+ * An item without an `id` (a lodge the club has not uploaded before, or a
+ * pre-2.3 client) is matched against the club's OWN lodges of exactly that
+ * name: exactly one live one -> that lodge, as if its id had been quoted
+ * (never renamed). None live but one deleted -> skipped `deleted`. Several
+ * live -> skipped `ambiguous-name` (the item must quote an id). None at all
+ * -> CREATED, even when another club's lodge already has that name.
+ *
+ * A lodge an admin deleted (#16) is skipped as `deleted`: it is kept for the
+ * bookings that cite it and never changed again. A rename moves `updatedAt`,
+ * so every other club's next pull carries the new name under the same id.
+ * Every result carries the lodge's `id` when there is one, so the club can
+ * link a lodge it has just created without matching on its name.
  *
  * The whole payload is validated before anything is written, so a bad item
  * makes the whole upload a 400 with no partial effect. The per-item writes
@@ -248,6 +251,8 @@ export async function POST(req: Request) {
   }
 
   const results: Array<{
+    // The lodge's id (API 2.5), whenever the item reached one.
+    id?: string;
     name: string;
     status: "created" | "updated" | "unchanged" | "skipped";
     reason?: string;
@@ -258,122 +263,79 @@ export async function POST(req: Request) {
   let skipped = 0;
   // Of `updated`, how many changed the lodge's name (API 2.3).
   let renamed = 0;
+  // Which lodges this upload created and renamed (#69): names may repeat, so
+  // the audit row names them by id for an administrator to review.
+  const createdLodges: Array<{ id: string; name: string }> = [];
+  const renamedLodges: Array<{ id: string; from: string; to: string }> = [];
 
-  // Every stored name, loaded once and only when a create needs it, for the
-  // lookalike check (see normalizeLodgeNameKey). Application-level and so
-  // race-prone by design: a lookalike created concurrently is not caught, only
-  // an exact duplicate is (by the unique index, below).
-  let knownNames: string[] | null = null;
-  // `ownName` (a rename) is the lodge's current name, which is never a rival.
-  const nameSimilarTo = async (name: string, ownName?: string) => {
-    knownNames ??= (
-      await prisma.otherLodge.findMany({ select: { name: true } })
-    ).map((l) => l.name);
-    return findSimilarLodgeName(
-      name,
-      ownName === undefined ? knownNames : knownNames.filter((n) => n !== ownName),
-    );
-  };
-  // A name created by THIS upload counts for the items after it.
-  const noteCreated = (name: string) => {
-    knownNames?.push(name);
-  };
-  // A rename moves a name: the old one is free for the items after it, and
-  // the new one is taken.
-  const noteRenamed = (from: string, to: string) => {
-    if (!knownNames) return;
-    const at = knownNames.indexOf(from);
-    if (at >= 0) knownNames[at] = to;
-    else knownNames.push(to);
+  // An item without an id (#69): the club's own lodge of exactly that name,
+  // when there is just one live one. A deleted one is reported (so a
+  // pre-2.3 client cannot resurrect it by name); several live ones cannot be
+  // told apart and are reported too (`ambiguous`), so a retried item does not
+  // add another copy each time. None at all is a create.
+  const ownLodgeByName = async (name: string) => {
+    const rows = await prisma.otherLodge.findMany({
+      where: { name, sourceClubId: club.id },
+      select: otherLodgeSelect,
+      orderBy: { createdAt: "asc" },
+    });
+    const live = rows.filter((r) => !r.deletedAt);
+    if (live.length > 1) return "ambiguous" as const;
+    if (live.length === 1) return live[0];
+    if (rows.length > 0) return rows[0];
+    return null;
   };
 
   try {
     for (const item of parsed.data.lodges) {
       const name = item.name.trim();
-      // API 2.3: an item that quotes the lodge's id is matched BY ID, so its
-      // name may differ (a rename). Without an id, by name, as before.
       const existing = item.id
         ? await prisma.otherLodge.findUnique({
             where: { id: item.id },
             select: otherLodgeSelect,
           })
-        : await prisma.otherLodge.findUnique({
-            where: { name },
-            select: otherLodgeSelect,
-          });
+        : await ownLodgeByName(name);
+      if (existing === "ambiguous") {
+        skipped++;
+        results.push({ name, status: "skipped", reason: "ambiguous-name" });
+        continue;
+      }
 
       const now = new Date();
-      // A deleted lodge (#16) is never changed again, by id or by its name
-      // (which stays taken): the club is told, and nothing is written.
+      // A deleted lodge (#16) is never changed again: the club is told, and
+      // nothing is written.
       if (existing?.deletedAt) {
         skipped++;
-        results.push({ name, status: "skipped", reason: "deleted" });
+        results.push({ id: existing.id, name, status: "skipped", reason: "deleted" });
         continue;
       }
       if (!existing && item.id) {
-        // An id this server never issued, or a lodge since deleted. Never a
-        // create: the club believes the lodge exists, and creating it under a
-        // new id would silently fork it.
+        // An id this server never issued. Never a create: the club believes
+        // the lodge exists, and creating it under a new id would fork it.
         skipped++;
-        results.push({ name, status: "skipped", reason: "unknown-id" });
+        results.push({ id: item.id, name, status: "skipped", reason: "unknown-id" });
         continue;
       }
       if (!existing) {
-        if (await nameSimilarTo(name)) {
-          skipped++;
-          results.push({ name, status: "skipped", reason: "similar-name" });
-          continue;
-        }
-        try {
-          await prisma.otherLodge.create({
-            data: {
-              name,
-              ...itemData(item),
-              ...(item.amenities
-                ? { amenities: { create: amenityCreateRows(item.amenities) } }
-                : {}),
-              sourceClubId: club.id,
-              lastUpdatedByClubId: club.id,
-              lastUploadedAt: now,
-            },
-          });
-          created++;
-          noteCreated(name);
-          results.push({ name, status: "created" });
-        } catch (error) {
-          // Concurrent create of the same name — treat as an ownership conflict.
-          if (
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === "P2002"
-          ) {
-            skipped++;
-            results.push({ name, status: "skipped", reason: "conflict" });
-          } else {
-            throw error;
-          }
-        }
+        const row = await prisma.otherLodge.create({
+          data: {
+            name,
+            ...itemData(item),
+            ...(item.amenities
+              ? { amenities: { create: amenityCreateRows(item.amenities) } }
+              : {}),
+            sourceClubId: club.id,
+            lastUpdatedByClubId: club.id,
+            lastUploadedAt: now,
+          },
+          select: { id: true },
+        });
+        created++;
+        createdLodges.push({ id: row.id, name });
+        results.push({ id: row.id, name, status: "created" });
       } else if (existing.sourceClubId === club.id) {
-        // A rename (only reachable by id): the new name must be free and must
-        // not merely LOOK like another lodge's, exactly as for a create. The
-        // lodge's own current name is not a rival, so a change of case or
-        // spacing alone is allowed.
+        // A rename is only reachable by id; a name match is the same name.
         const renamedFrom = item.id !== undefined && existing.name !== name ? existing.name : null;
-        if (renamedFrom !== null) {
-          const holder = await prisma.otherLodge.findUnique({
-            where: { name },
-            select: { id: true },
-          });
-          if (holder) {
-            skipped++;
-            results.push({ name, status: "skipped", reason: "name-taken" });
-            continue;
-          }
-          if (await nameSimilarTo(name, existing.name)) {
-            skipped++;
-            results.push({ name, status: "skipped", reason: "similar-name" });
-            continue;
-          }
-        }
         const data = itemData(item);
         // Only write (and bump `updatedAt`) when a column actually changed, so an
         // unchanged re-upload does not churn the row or the distribution cursor.
@@ -409,20 +371,10 @@ export async function POST(req: Request) {
               });
             }
           } catch (error) {
-            // A rename onto a name another writer took since the check above.
-            if (
-              renamedFrom !== null &&
-              error instanceof Prisma.PrismaClientKnownRequestError &&
-              error.code === "P2002"
-            ) {
-              skipped++;
-              results.push({ name, status: "skipped", reason: "name-taken" });
-              continue;
-            }
             // Deleted by an admin since the read (#16): nothing was written.
             if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
               skipped++;
-              results.push({ name, status: "skipped", reason: "deleted" });
+              results.push({ id: existing.id, name, status: "skipped", reason: "deleted" });
               continue;
             }
             throw error;
@@ -430,16 +382,17 @@ export async function POST(req: Request) {
           updated++;
           if (renamedFrom !== null) {
             renamed++;
-            noteRenamed(renamedFrom, name);
+            renamedLodges.push({ id: existing.id, from: renamedFrom, to: name });
           }
-          results.push({ name, status: "updated" });
+          results.push({ id: existing.id, name, status: "updated" });
         } else {
           unchanged++;
-          results.push({ name, status: "unchanged" });
+          results.push({ id: existing.id, name, status: "unchanged" });
         }
       } else {
         skipped++;
         results.push({
+          id: existing.id,
           name,
           status: "skipped",
           reason: existing.sourceClubId === null ? "owned-centrally" : "owned-by-other-club",
@@ -461,6 +414,8 @@ export async function POST(req: Request) {
         unchanged,
         skipped,
         renamed,
+        createdLodges,
+        renamedLodges,
         total: parsed.data.lodges.length,
         completed: created + updated + unchanged + skipped === parsed.data.lodges.length,
       },

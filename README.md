@@ -198,12 +198,13 @@ run several lodges, so a club can own several.
 - Unticking returns a lodge to central ownership; it does not delete it.
 - Saving is all-or-nothing, including when two people save at once.
 - A club can still add a **new** lodge by uploading it; it becomes that club's.
-- Every pull of `GET /api/v1/other-lodges` returns `ownLodgeNames`, by lodge name
-  (the booking site keys its copy by name), so the site can allow editing only
-  those. Since 2.2 it also returns `ownLodges`, the same lodges as `{ id, name }`:
-  the booking site links each of its own lodges to a central one by that
-  permanent id (a lodge can be renamed here; its id never changes). It is sent on every pull, incremental or not, because it is the club's
-  whole current list and not a delta. A club's upload can only change a lodge it
+- Every pull of `GET /api/v1/other-lodges` returns `ownLodges`, the lodges this
+  club owns as `{ id, name }`, so the site can allow editing only those. The
+  booking site keys them by that permanent id, because a lodge can be renamed
+  and two lodges may share a name; its id never changes. (Before 2.5 the pull
+  also sent `ownLodgeNames`, the same list by name.) It is sent on every pull,
+  incremental or not, because it is the club's whole current list and not a
+  delta. A club's upload can only change a lodge it
   owns; the server enforces that whatever the site does.
 
 #### Image manager and lodge pictures
@@ -291,7 +292,7 @@ signs the user out to re-authenticate with the new credentials.
 | `POST /api/v1/clubs/register`| none (rate-limited) | Request linking. Creates a `PENDING` club. |
 | `POST /api/v1/sync`          | Bearer token | Push/pull sync batch for an approved club. |
 | `POST /api/v1/other-lodges`  | Bearer token (`lodges:write`) | Upload the club's "Other lodges" entries. |
-| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry, plus `ownLodgeNames`: the lodges this club owns. **A booking officer's phone number is never sent** (see below). |
+| `GET  /api/v1/other-lodges`  | Bearer token (`lodges:read`)  | Pull every entry, plus `ownLodges`: the lodges this club owns. **A booking officer's phone number is never sent** (see below). |
 | `GET  /api/v1/version`       | Bearer token (any approved club) | The server's **API version**, and whether the caller's matches. See below. |
 | `GET  /api/health`           | none        | Liveness + DB connectivity probe.          |
 
@@ -351,6 +352,11 @@ both directions until the club is upgraded.
   can link its own lodges to the central ones by permanent id rather than by a
   name that can change. Its fingerprint was recorded once more, for
   `ownLodges`, before 2.2 was released; once released it is never rewritten.
+  `2.3` keys an upload that quotes a lodge's `id` by that id (a rename), and
+  `2.4` adds `deletedLodges` to the pull (logical deletes). `2.5` (#69) lets
+  two lodges share a name: upload results carry each lodge's `id`, the
+  `name-taken`, `similar-name` and `conflict` refusals are gone, and the pull
+  drops `ownLodgeNames`.
 - **Bumping:** raise the major for an incompatible `/api/v1` request or response
   change, the minor for a bug fix clubs should be upgraded for. Remember that
   **any** bump pauses every club until each is upgraded. The contract test
@@ -379,16 +385,18 @@ without a version change).
 
 1. A connected club **uploads** its entries: `POST /api/v1/other-lodges` with
    `{ "lodges": [ { "name": "...", "location": "...", "bedCapacity": 20 } ] }`.
-   Each entry is keyed by unique `name` and **owned** by the uploading club —
-   new names are created, the club's own entries are updated, and names owned
-   centrally or by another club are **skipped** (no clobber). Each result
-   carries a `status` and, when skipped, a `reason`:
-   `owned-centrally`, `owned-by-other-club`, `conflict` (the same name was
-   created by a concurrent upload) or `similar-name` — the new name differs
-   from an existing lodge's only by case, spacing, invisible characters or
-   full-width letters, so it would be a convincing duplicate distributed to
-   every club. The unique index is exact, so this check is made by the
-   application and a lookalike created in the same instant can slip past it.
+   Each entry is **owned** by the uploading club. **Names are not unique**
+   (API 2.5, #69): two lodges may share a name, and the permanent `id` is what
+   tells them apart. An entry without an `id` is matched against the club's
+   **own** lodges of exactly that name: when there is exactly one, it is that
+   lodge and is updated; when there are several it is skipped as
+   `ambiguous-name` (quote the id); when there is none, a new lodge is
+   created, even if another club's lodge has the same name. There is exactly
+   one result per entry, **in the order sent**, and each carries the lodge's
+   `id` (when it has one), the `name`, a `status` and, when skipped, a `reason`:
+   `owned-centrally`, `owned-by-other-club`, `unknown-id`, `deleted` or
+   `ambiguous-name`. The
+   club records the `id` of each lodge it created and quotes it from then on.
    The whole payload is validated before anything is written; a bad item
    makes the whole upload a `400`.
 
@@ -397,15 +405,16 @@ without a version change).
    `name` **renames** the club's own lodge instead of creating a second one.
    The rename moves the lodge's `updatedAt`, so every other club's next
    incremental pull carries the new name under the same id, and the booking
-   site renames its copy in place. A rename is refused (skipped, nothing
-   written) with `name-taken` when another lodge holds the new name, or
-   `similar-name` when the new name only looks like another lodge's; a change
-   of case or spacing to the lodge's own name is allowed. An id the server
-   does not know is skipped as `unknown-id` and is **never** created. An entry
-   without an `id` behaves exactly as before.
+   site renames its copy in place. The new name may be one another lodge
+   already has. An id the server does not know is skipped as `unknown-id` and
+   is **never** created, and an entry that quotes an `id` is never matched by
+   its name.
 2. A **central admin** can add and edit entries at `/lodges`; nothing needs to
-   be ticked for an entry to be shared. The same lookalike-name rule applies
-   there (a `409` naming the existing lodge).
+   be ticked for an entry to be shared. A name another live lodge already has,
+   or one that differs from it only by case, spacing, invisible characters or
+   full-width letters, is allowed but asked about first: the request gets a
+   `409` with `code: "similar-name"`, the page asks whether to save anyway,
+   and resends with `allowSimilarName: true`.
 3. Every connected club **pulls** the registry: `GET /api/v1/other-lodges`
    returns every entry. Pass `?since=<ISO>` for an incremental pull; use the
    response `cursor` as the next `since`. The cursor is the newest `updatedAt`
@@ -418,10 +427,10 @@ without a version change).
    is a **logical** delete: it sets the lodge's `deleted_at` and keeps the row,
    because clubs' bookings may cite it. On `/lodges` it stays listed with a
    faded red background and a "Deleted" label, and can no longer be edited or
-   deleted. Its name stays taken. Everywhere else it is gone: the public
+   deleted. Everywhere else it is gone: the public
    search and its free-bed checks, the club chooser, the pull's `lodges` and
-   `ownLodges`, and uploads, which skip it as `deleted` whether they name it
-   or quote its id.
+   `ownLodges`, and uploads, which skip it as `deleted` when they quote its id
+   (or, without an id, name the club's own deleted lodge and no live one).
 
    Every pull returns `deletedLodges: [{ id, deletedAt }]`, oldest first: the
    lodges deleted after `since`, or every deleted lodge on a pull without one,

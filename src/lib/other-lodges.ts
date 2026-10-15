@@ -401,9 +401,9 @@ export function isSafeHttpUrl(value: string): boolean {
  * NFKC-folded (full-width and compatibility characters to their plain forms),
  * every format and control character removed (zero-width space and joiners,
  * word joiner, BOM), every kind of whitespace removed (NBSP included) and
- * lower-cased. The unique index is exact and case-sensitive, so without this a
- * club could upload "Ruapehu Lodge" with a zero-width space in it and have a
- * convincing duplicate distributed to every club.
+ * lower-cased. Names are not unique (#69), so this only WARNS an
+ * administrator who types a name another lodge already has, or one that looks
+ * like it ("Ruapehu Lodge" with a zero-width space in it).
  *
  * What it does NOT fold: homoglyphs from other scripts (a Cyrillic "а" for a
  * Latin "a"), which NFKC leaves alone.
@@ -417,12 +417,9 @@ export function normalizeLodgeNameKey(name: string): string {
 }
 
 /**
- * The stored name whose key equals `name`'s but whose spelling differs, or
- * null. An exact match is NOT reported: that is the unique index's job (and
- * the upload's "owned" paths). Application-level and therefore race-prone by
- * design — two lookalikes created in the same instant both pass; only the
- * exact-name index is atomic — which is accepted, because the alternative is
- * a schema change (a generated normalised column with its own unique index).
+ * The first stored name whose key equals `name`'s (the same name, or one that
+ * only looks like it), or null. Used for the administrator's "save anyway?"
+ * warning (#69); the caller leaves the lodge's own current name out.
  */
 export function findSimilarLodgeName(
   name: string,
@@ -430,7 +427,7 @@ export function findSimilarLodgeName(
 ): string | null {
   const key = normalizeLodgeNameKey(name);
   for (const existing of existingNames) {
-    if (existing !== name && normalizeLodgeNameKey(existing) === key) {
+    if (normalizeLodgeNameKey(existing) === key) {
       return existing;
     }
   }
@@ -438,8 +435,15 @@ export function findSimilarLodgeName(
 }
 
 export function similarLodgeNameMessage(existing: string): string {
-  return `A lodge named "${existing}" already exists; the new name is too similar to be told apart.`;
+  return `A lodge called "${existing}" (or a name that looks the same) already exists. Save anyway?`;
 }
+
+/**
+ * The 409 code an admin create or rename gets when the name is taken or looks
+ * like one that is (#69). The admin page asks, then resends with
+ * `allowSimilarName: true`.
+ */
+export const SIMILAR_LODGE_NAME_CODE = "similar-name";
 
 /** A real calendar date: `2026-02-30` matches the pattern but is not one. */
 function isRealCalendarDate(value: string): boolean {
@@ -681,9 +685,13 @@ const lodgeContactShape = {
 
 const lodgeNameField = lineText(LODGE_NAME_MAX, 1);
 
+// The administrator confirmed a name another lodge has, or looks like (#69).
+const allowSimilarNameField = z.boolean().optional();
+
 export const otherLodgeCreateSchema = z
   .object({
     name: lodgeNameField,
+    allowSimilarName: allowSimilarNameField,
     ...lodgeContactShape,
     ...lodgeDetailShape,
     ...lodgePictureShape,
@@ -733,17 +741,13 @@ export function serializeOtherLodgeForClient(
  * fingerprint covers it and a field cannot be added to the response without the
  * version moving.
  *
- * `ownLodgeNames` is the lodges the AUTHENTICATED club owns (set by an
- * administrator on /clubs). It is sent on every pull, incremental or not,
- * because it is the club's whole current list and not a delta: a lodge that was
- * unticked has not changed, so no incremental row would ever announce its loss.
- * By NAME, because that is how the booking site keys its own copy.
- *
- * `ownLodges` (API 2.2) is the same list with each lodge's permanent `id`.
- * A lodge can be renamed here, so the booking site links each of its own
- * lodges to the central one BY ID (its "Central lodge" setting, and the id the
- * public search asks it about); the name rides along for its dropdown. Both
- * lists are built from the one query, so they cannot disagree.
+ * `ownLodges` (API 2.2) is the lodges the AUTHENTICATED club owns (set by an
+ * administrator on /clubs), each as its permanent `id` and its name. It is
+ * sent on every pull, incremental or not, because it is the club's whole
+ * current list and not a delta: a lodge that was unticked has not changed, so
+ * no incremental row would ever announce its loss. The booking site keys its
+ * copy BY ID, because names are not unique (#69); the name rides along for its
+ * dropdown. (API 2.5 dropped the name-only `ownLodgeNames`.)
  *
  * `deletedLodges` (API 2.4, #16) lists the lodges deleted since the club's
  * `since` (every deletion on a pull without one), each as its permanent `id`
@@ -761,7 +765,6 @@ export function buildOtherLodgePullEnvelope(input: {
     lodges: input.lodges,
     cursor: input.cursor,
     count: input.lodges.length,
-    ownLodgeNames: input.ownLodges.map((l) => l.name),
     ownLodges: input.ownLodges.map((l) => ({ id: l.id, name: l.name })),
     deletedLodges: input.deletedLodges.map((d) => ({
       id: d.id,
@@ -817,6 +820,7 @@ export const otherLodgeUploadSchema = z.object({
 export const otherLodgeUpdateSchema = z
   .object({
     name: lodgeNameField.optional(),
+    allowSimilarName: allowSimilarNameField,
     ...lodgeContactShape,
     ...lodgeDetailShape,
     ...lodgePictureShape,

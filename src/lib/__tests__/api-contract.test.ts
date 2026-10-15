@@ -166,7 +166,7 @@ export function currentContractFingerprint(): string {
     responses: {
       otherLodge: keysOf(serializeOtherLodgeForClient(lodgeFixture)),
       // The whole pull response, not just a lodge in it: a top-level field such
-      // as `ownLodgeNames` is part of the contract too.
+      // as `deletedLodges` is part of the contract too.
       otherLodgePull: keysOf(
         buildOtherLodgePullEnvelope({
           lodges: [serializeOtherLodgeForClient(lodgeFixture)],

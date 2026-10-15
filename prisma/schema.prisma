@@ -223,7 +223,9 @@ model AuditLog {
 
 model OtherLodge {
   id                  String  @id @default(cuid())
-  name                String  @unique
+  // Not unique (#69): two lodges may share a name; the id is what makes them
+  // distinct. Indexed for the lookalike warning and the upload's own-lodge match.
+  name                String
   location            String? @db.VarChar(300)
   bookingOfficerName  String? @map("booking_officer_name") @db.VarChar(200)
   bookingOfficerEmail String? @map("booking_officer_email") @db.VarChar(320)
@@ -299,6 +301,7 @@ model OtherLodge {
   @@index([imageId])
   @@index([logoId])
   @@index([deletedAt])
+  @@index([name])
   @@map("other_lodges")
 }
 

@@ -32,6 +32,7 @@ import {
   LODGE_NAME_MAX,
   LODGE_RATE_FIELDS,
   LODGE_RATE_MAX,
+  SIMILAR_LODGE_NAME_CODE,
   type LodgeBooleanField,
   type LodgeRateField,
   type SerializedOtherLodge,
@@ -299,21 +300,28 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
     setSaving(true);
     setError(null);
     try {
-      const res = creating
-        ? await fetch("/api/admin/other-lodges", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(formPayload(form)),
-          })
-        : await fetch(`/api/admin/other-lodges/${editingId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(formPayload(form)),
-          });
+      const send = (allowSimilarName: boolean) =>
+        fetch(creating ? "/api/admin/other-lodges" : `/api/admin/other-lodges/${editingId}`, {
+          method: creating ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...formPayload(form),
+            ...(allowSimilarName ? { allowSimilarName: true } : {}),
+          }),
+        });
+      let res = await send(false);
+      let data = res.ok
+        ? null
+        : ((await res.json().catch(() => null)) as { error?: string; code?: string } | null);
+      // Names may repeat (#69); the server asks first when one already does.
+      if (res.status === 409 && data?.code === SIMILAR_LODGE_NAME_CODE) {
+        if (!window.confirm(data.error ?? "Another lodge has that name. Save anyway?")) return;
+        res = await send(true);
+        data = res.ok
+          ? null
+          : ((await res.json().catch(() => null)) as { error?: string; code?: string } | null);
+      }
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          error?: string;
-        } | null;
         throw new Error(data?.error ?? "Failed to save lodge");
       }
       cancelEdit();
@@ -328,7 +336,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
   async function deleteLodge(lodge: SerializedOtherLodge) {
     if (
       !window.confirm(
-        `Delete "${lodge.name}"? It stays listed here, marked Deleted, and its name stays taken. It is hidden from the public search and from every club's lodge lists on their next download; bookings that already name it keep it. This cannot be undone.`,
+        `Delete "${lodge.name}"${lodge.location ? ` (${lodge.location})` : ""}? It stays listed here, marked Deleted. It is hidden from the public search and from every club's lodge lists on their next download; bookings that already name it keep it. This cannot be undone.`,
       )
     ) {
       return;

@@ -11,7 +11,9 @@ import {
   normalizeOtherLodgeText,
   otherLodgeSelect,
   otherLodgeUpdateSchema,
+  liveOtherLodgeWhere,
   serializeOtherLodge,
+  SIMILAR_LODGE_NAME_CODE,
   similarLodgeNameMessage,
 } from "@/lib/other-lodges";
 import { replaceAmenities } from "@/lib/other-lodge-amenities";
@@ -74,18 +76,17 @@ export async function PATCH(
   const data: Prisma.OtherLodgeUpdateInput = {};
   if (parsed.data.name !== undefined) {
     const name = parsed.data.name.trim();
-    if (name !== existing.name) {
-      // A rename to a name that only LOOKS like another lodge's (see
-      // normalizeLodgeNameKey). App-level and race-prone by design; the unique
-      // index still holds the exact name.
+    if (name !== existing.name && !parsed.data.allowSimilarName) {
+      // A rename to a name another live lodge has, or one that only LOOKS
+      // like it (#69): allowed, once the administrator has confirmed it.
       const others = await prisma.otherLodge.findMany({
-        where: { id: { not: existing.id } },
+        where: { ...liveOtherLodgeWhere, id: { not: existing.id } },
         select: { name: true },
       });
       const similar = findSimilarLodgeName(name, others.map((l) => l.name));
       if (similar) {
         return NextResponse.json(
-          { error: similarLodgeNameMessage(similar) },
+          { error: similarLodgeNameMessage(similar), code: SIMILAR_LODGE_NAME_CODE, similarTo: similar },
           { status: 409 },
         );
       }
@@ -170,12 +171,6 @@ export async function PATCH(
     }
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === "P2002") {
-        return NextResponse.json(
-          { error: "A lodge with that name already exists." },
-          { status: 409 },
-        );
-      }
       // The lodge deleted between the read and this write (#16).
       if (error.code === "P2025") {
         const now = await prisma.otherLodge.findUnique({
@@ -247,8 +242,8 @@ export async function DELETE(
     return NextResponse.json({ error: "This lodge is already deleted." }, { status: 409 });
   }
 
-  // A LOGICAL delete (#16): the row stays, because clubs' bookings may cite it,
-  // and its name stays taken. Every club's next pull reports it in
+  // A LOGICAL delete (#16): the row stays, because clubs' bookings may cite it.
+  // Every club's next pull reports it in
   // `deletedLodges`, however stale its cursor, and each hides its own copy.
   // Guarded, so a second Delete at the same moment does not move the instant.
   // `updatedAt` is left alone: the deletion is reported by `deletedAt`.

@@ -165,11 +165,11 @@ describe("lookalike lodge names", () => {
     expect(normalizeLodgeNameKey("Ruapehu Hut")).not.toBe(key);
   });
 
-  it("findSimilarLodgeName reports a lookalike but never the exact same name", () => {
+  it("findSimilarLodgeName reports the same name or a lookalike (#69: both only warn)", () => {
     const names = ["Ruapehu Lodge", "Tasman Lodge"];
     expect(findSimilarLodgeName("Ruapehu​ Lodge", names)).toBe("Ruapehu Lodge");
     expect(findSimilarLodgeName("ruapehu lodge", names)).toBe("Ruapehu Lodge");
-    expect(findSimilarLodgeName("Ruapehu Lodge", names)).toBeNull();
+    expect(findSimilarLodgeName("Ruapehu Lodge", names)).toBe("Ruapehu Lodge");
     expect(findSimilarLodgeName("Whakapapa Lodge", names)).toBeNull();
   });
 });
