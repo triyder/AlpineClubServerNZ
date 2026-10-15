@@ -74,7 +74,10 @@ export const LODGE_INT_FIELDS = [
 ] as const;
 /**
  * Non-member rates per person per night (NZD incl. GST, display only), a winter
- * and a summer set for each guideline age group: under 5, 5-11, 12-17, 18+.
+ * and a summer set for each guideline age group: under 5, 5-12, 13-17, 18+.
+ * (The `5To11` and `12To17` field names predate the owner's 16 Oct 2026 change
+ * of the groups to 5-12 and 13-17; they are kept so the API and stored data
+ * stay as they were. The labels are what an administrator and a guest see.)
  * Stored as DECIMAL(8,2); on the wire a number of dollars with at most two
  * decimal places, or null for "not set".
  */
