@@ -118,7 +118,7 @@ describe("assignClubLodges", () => {
     setup([lodge("a", "Alpha")], []);
     updateMany.mockResolvedValueOnce({ count: 1 });
     await assignClubLodges("club_1", ["a", "a", "a"]);
-    expect(findMany.mock.calls[0][0].where).toEqual({ id: { in: ["a"] } });
+    expect(findMany.mock.calls[0][0].where).toEqual({ id: { in: ["a"] }, deletedAt: null });
     expect(updateMany.mock.calls[0][0].where.id).toEqual({ in: ["a"] });
   });
 

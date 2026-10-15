@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { otherLodgeOrderBy } from "@/lib/other-lodges";
+import { loadPublicLodgeRecords } from "@/lib/public-lodges";
 import {
   parseSearchParams,
-  publicLodgeSelect,
   searchLodges,
   todayInNz,
   toPublicLodge,
@@ -71,10 +69,8 @@ export default async function BookPage({
       </p>
     );
   } else {
-    const records = await prisma.otherLodge.findMany({
-      select: publicLodgeSelect,
-      orderBy: otherLodgeOrderBy(),
-    });
+    // A deleted lodge (#16) is not offered to the public.
+    const records = await loadPublicLodgeRecords();
     // Live free beds from each owning club's booking site, asked now and not
     // stored (Phase D). Only the lodges that already fit the party and the
     // ticked facilities are asked about; a club that does not answer leaves

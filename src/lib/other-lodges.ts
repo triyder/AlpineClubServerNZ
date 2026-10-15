@@ -146,6 +146,8 @@ const EXCUSED_OTHER_LODGE_COLUMNS = [
   "lastUploadedAt",
   "createdAt",
   "updatedAt",
+  // Lifecycle, not a detail (#16): set by the admin Delete, never uploaded.
+  "deletedAt",
 ] as const;
 
 type OtherLodgeColumn = Prisma.OtherLodgeScalarFieldEnum;
@@ -179,6 +181,7 @@ export const otherLodgeSelect = {
   logo: { select: imageRefSelect },
   sourceClubId: true,
   sourceClub: { select: { id: true, name: true, code: true } },
+  deletedAt: true,
   lastUpdatedByClubId: true,
   lastUpdatedByClub: { select: { id: true, name: true, code: true } },
   lastUploadedAt: true,
@@ -265,6 +268,8 @@ function serializeLodgeDetail(lodge: OtherLodgeRecord): SerializedLodgeDetail {
 
 export interface SerializedOtherLodge extends SerializedLodgeDetail {
   id: string;
+  /** When an admin deleted it (#16), or null. Admin views only. */
+  deletedAt: string | null;
   /** The picture and logo chosen from the image library, if any. */
   image: LodgeImageRef | null;
   logo: LodgeImageRef | null;
@@ -312,10 +317,14 @@ export function serializeOtherLodge(
     lastUploadedAt: lodge.lastUploadedAt
       ? lodge.lastUploadedAt.toISOString()
       : null,
+    deletedAt: lodge.deletedAt ? lodge.deletedAt.toISOString() : null,
     createdAt: lodge.createdAt.toISOString(),
     updatedAt: lodge.updatedAt.toISOString(),
   };
 }
+
+/** Rows a club or the public may see (#16): not logically deleted. */
+export const liveOtherLodgeWhere = { deletedAt: null } satisfies Prisma.OtherLodgeWhereInput;
 
 // Alphabetical, name-first; tie-break on id for deterministic ordering.
 export function otherLodgeOrderBy() {
@@ -738,8 +747,9 @@ export function serializeOtherLodgeForClient(
  *
  * `deletedLodges` (API 2.4, #16) lists the lodges deleted since the club's
  * `since` (every deletion on a pull without one), each as its permanent `id`
- * and when it was deleted, so the booking site can remove its own copy however
- * stale its cursor. Oldest first.
+ * and when it was deleted, so the booking site can hide its own copy however
+ * stale its cursor. A deleted lodge is never in `lodges` or `ownLodges`. Oldest
+ * first.
  */
 export function buildOtherLodgePullEnvelope(input: {
   lodges: DistributedOtherLodge[];

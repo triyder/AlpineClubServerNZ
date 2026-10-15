@@ -15,7 +15,15 @@ const findUnique = vi.fn();
 const create = vi.fn();
 const update = vi.fn();
 const auditCreate = vi.fn().mockResolvedValue({});
-const tombstones = vi.fn().mockResolvedValue([]);
+/** The pull's three reads, told apart by their `where` (#16). */
+function pullReads(rows: { live?: unknown[]; deleted?: unknown[] }) {
+  findMany.mockImplementation(async (args: { where?: Record<string, unknown> }) => {
+    const where = args.where ?? {};
+    if ("sourceClubId" in where) return [];
+    if (where.deletedAt !== null && where.deletedAt !== undefined) return rows.deleted ?? [];
+    return rows.live ?? [];
+  });
+}
 vi.mock("@/lib/db", () => ({
   prisma: {
     otherLodge: {
@@ -24,8 +32,6 @@ vi.mock("@/lib/db", () => ({
       create: (...a: unknown[]) => create(...a),
       update: (...a: unknown[]) => update(...a),
     },
-    // Tombstones (#16): none unless a test says so.
-    deletedOtherLodge: { findMany: (...a: unknown[]) => tombstones(...a) },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -126,17 +132,17 @@ describe("GET /api/v1/other-lodges (pull)", () => {
     expect(json.cursor).toBe("2026-02-01T00:00:00.000Z");
   });
 
-  it("tells the club about deletions since its cursor, oldest first (#16)", async () => {
+  it("never sends a deleted lodge as a lodge, and reports deletions since the cursor, oldest first (#16)", async () => {
     authenticate.mockResolvedValue(authOk(["lodges:read"]));
-    findMany.mockResolvedValue([]);
-    tombstones.mockResolvedValueOnce([
-      { id: "gone_1", deletedAt: new Date("2026-03-01T00:00:00.000Z") },
-    ]);
-    const res = await GET(req("GET", `${url}?since=2026-02-15T00:00:00.000Z`));
-    const json = await res.json();
-    const [args] = tombstones.mock.calls.at(-1)!;
-    expect(args.where.deletedAt.gt.toISOString()).toBe("2026-02-15T00:00:00.000Z");
-    expect(args.orderBy).toEqual({ deletedAt: "asc" });
+    pullReads({ deleted: [{ id: "gone_1", deletedAt: new Date("2026-03-01T00:00:00.000Z") }] });
+    const json = await (await GET(req("GET", `${url}?since=2026-02-15T00:00:00.000Z`))).json();
+    const reads = findMany.mock.calls.map(([args]) => args.where ?? {});
+    // The lodges and the owned list are LIVE lodges only.
+    expect(reads[0].deletedAt).toBeNull();
+    expect(reads[1]).toMatchObject({ deletedAt: null });
+    // The deletions read: deleted since the cursor, oldest first.
+    expect(reads[2].deletedAt.gt.toISOString()).toBe("2026-02-15T00:00:00.000Z");
+    expect(findMany.mock.calls[2][0].orderBy).toEqual({ deletedAt: "asc" });
     expect(json.deletedLodges).toEqual([{ id: "gone_1", deletedAt: "2026-03-01T00:00:00.000Z" }]);
     // A pull that carried only a deletion still moves the cursor past it.
     expect(json.cursor).toBe("2026-03-01T00:00:00.000Z");
@@ -144,20 +150,31 @@ describe("GET /api/v1/other-lodges (pull)", () => {
 
   it("sends EVERY deletion on a pull without a cursor", async () => {
     authenticate.mockResolvedValue(authOk(["lodges:read"]));
-    findMany.mockResolvedValue([]);
+    pullReads({});
     await GET(req("GET", url));
-    expect(tombstones.mock.calls.at(-1)![0].where).toEqual({});
+    expect(findMany.mock.calls[2][0].where).toEqual({ deletedAt: { not: null } });
   });
 
   it("takes the newest of the lodges' and the deletions' instants as the cursor", async () => {
     authenticate.mockResolvedValue(authOk(["lodges:read"]));
-    findMany.mockResolvedValueOnce([dbRow()]).mockResolvedValueOnce([]);
-    tombstones.mockResolvedValueOnce([
-      { id: "gone_1", deletedAt: new Date("2026-01-10T00:00:00.000Z") },
-    ]);
+    pullReads({
+      live: [dbRow()],
+      deleted: [{ id: "gone_1", deletedAt: new Date("2026-01-10T00:00:00.000Z") }],
+    });
     const json = await (await GET(req("GET", url))).json();
     // dbRow's updatedAt (1 Feb) is newer than the deletion (10 Jan).
     expect(json.cursor).toBe("2026-02-01T00:00:00.000Z");
+  });
+
+  it("skips an upload of a deleted lodge, by name or by id, writing nothing (#16)", async () => {
+    authenticate.mockResolvedValue(authOk(["lodges:write"]));
+    findUnique.mockResolvedValue({ id: "l1", name: "Tasman Lodge", sourceClubId: "club_1", deletedAt: new Date() });
+    const byName = await (await POST(req("POST", url, { lodges: [{ name: "Tasman Lodge", bedCapacity: 3 }] }))).json();
+    const byId = await (await POST(req("POST", url, { lodges: [{ id: "l1", name: "Tasman Lodge" }] }))).json();
+    expect(byName.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "deleted" });
+    expect(byId.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "deleted" });
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("passes ?since through as an updatedAt filter", async () => {

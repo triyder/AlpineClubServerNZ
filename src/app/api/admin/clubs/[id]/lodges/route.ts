@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 import { requireManager } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
@@ -98,7 +99,7 @@ export async function PUT(
   });
 
   const owned = await prisma.otherLodge.findMany({
-    where: { sourceClubId: club.id },
+    where: { sourceClubId: club.id, ...liveOtherLodgeWhere },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });

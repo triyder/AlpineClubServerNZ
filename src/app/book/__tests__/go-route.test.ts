@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const findUnique = vi.fn();
 vi.mock("@/lib/db", () => ({
-  prisma: { otherLodge: { findUnique: (...a: unknown[]) => findUnique(...a) } },
+  // `findFirst` (#16): the lodge must also not be deleted.
+  prisma: { otherLodge: { findFirst: (...a: unknown[]) => findUnique(...a) } },
 }));
 
 import { GET } from "@/app/book/go/[lodgeId]/route";
@@ -22,7 +23,10 @@ describe("GET /book/go/:lodgeId (Book now)", () => {
     const res = await call("clx123abc");
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("https://ruapehu.example/book?x=1");
-    expect(findUnique).toHaveBeenCalledWith({ where: { id: "clx123abc" }, select: { siteUrl: true } });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "clx123abc", deletedAt: null },
+      select: { siteUrl: true },
+    });
   });
 
   it.each([

@@ -10,8 +10,7 @@ const findMany = vi.fn();
 const findUnique = vi.fn();
 const update = vi.fn();
 const del = vi.fn();
-const tombstone = vi.fn();
-const transaction = vi.fn(async (ops: unknown[]) => Promise.all(ops));
+const updateMany = vi.fn();
 const auditCreate = vi.fn().mockResolvedValue({});
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -21,9 +20,8 @@ vi.mock("@/lib/db", () => ({
       findUnique: (...a: unknown[]) => findUnique(...a),
       update: (...a: unknown[]) => update(...a),
       delete: (...a: unknown[]) => del(...a),
+      updateMany: (...a: unknown[]) => updateMany(...a),
     },
-    deletedOtherLodge: { create: (...a: unknown[]) => tombstone(...a) },
-    $transaction: (ops: unknown[]) => transaction(ops),
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -243,36 +241,48 @@ describe("PATCH /api/admin/other-lodges/[id]", () => {
   });
 });
 
-describe("DELETE /api/admin/other-lodges/[id]", () => {
+describe("DELETE /api/admin/other-lodges/[id] (a logical delete, #16)", () => {
   const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
   it("returns 404 for an unknown lodge", async () => {
     findUnique.mockResolvedValue(null);
     const res = await DELETE(jsonReq({}, "DELETE"), ctx("nope"));
     expect(res.status).toBe(404);
-    expect(del).not.toHaveBeenCalled();
-    expect(tombstone).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("deletes an existing lodge and audits it", async () => {
-    findUnique.mockResolvedValue(dbRow());
-    del.mockResolvedValue(dbRow());
+  it("FLAGS the lodge deleted, keeping the row and its updatedAt, and audits it", async () => {
+    updateMany.mockClear();
+    const updatedAt = new Date("2026-02-01T00:00:00.000Z");
+    findUnique.mockResolvedValue(dbRow({ id: "l1", updatedAt, deletedAt: null }));
+    updateMany.mockResolvedValue({ count: 1 });
     const res = await DELETE(jsonReq({}, "DELETE"), ctx("l1"));
     expect(res.status).toBe(200);
-    expect(del).toHaveBeenCalledOnce();
+    expect(del).not.toHaveBeenCalled();
+    const [args] = updateMany.mock.calls[0];
+    expect(args.where).toEqual({ id: "l1", deletedAt: null });
+    expect(args.data.deletedAt).toBeInstanceOf(Date);
+    expect(args.data.updatedAt).toBe(updatedAt);
     expect(auditCreate).toHaveBeenCalled();
   });
 
-  it("writes the lodge's tombstone in the SAME transaction as the delete (#16)", async () => {
-    transaction.mockClear();
-    tombstone.mockClear();
-    findUnique.mockResolvedValue(dbRow({ id: "l1", name: "Whakapapa Lodge" }));
-    del.mockResolvedValue(dbRow());
-    tombstone.mockResolvedValue({});
-    await DELETE(jsonReq({}, "DELETE"), ctx("l1"));
-    expect(transaction).toHaveBeenCalledOnce();
-    expect((transaction.mock.calls[0][0] as unknown[]).length).toBe(2);
-    expect(del).toHaveBeenCalledWith({ where: { id: "l1" } });
-    expect(tombstone).toHaveBeenCalledWith({ data: { id: "l1", name: "Whakapapa Lodge" } });
+  it("refuses to delete a lodge twice", async () => {
+    updateMany.mockClear();
+    findUnique.mockResolvedValue(dbRow({ deletedAt: new Date("2026-03-01T00:00:00.000Z") }));
+    const res = await DELETE(jsonReq({}, "DELETE"), ctx("l1"));
+    expect(res.status).toBe(409);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /api/admin/other-lodges/[id] on a deleted lodge (#16)", () => {
+  it("is refused: a deleted lodge is never changed again", async () => {
+    update.mockClear();
+    findUnique.mockResolvedValue(dbRow({ deletedAt: new Date("2026-03-01T00:00:00.000Z") }));
+    const res = await PATCH(jsonReq({ bedCapacity: 3 }, "PATCH"), {
+      params: Promise.resolve({ id: "l1" }),
+    });
+    expect(res.status).toBe(409);
+    expect(update).not.toHaveBeenCalled();
   });
 });

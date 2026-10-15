@@ -13,6 +13,7 @@ import {
   lodgeDetailColumns,
   lodgeDetailDiffers,
   normalizeOtherLodgeText,
+  liveOtherLodgeWhere,
   otherLodgeOrderBy,
   otherLodgePullCursor,
   otherLodgeSelect,
@@ -83,28 +84,33 @@ export async function GET(req: Request) {
 
   // The club's own lodges are read on EVERY pull, whatever `since` says: it is
   // the club's whole current list and not a delta (see the envelope builder).
-  // Deletions (#16) ride the same `since`: every tombstone newer than the
-  // club's cursor, or all of them on a pull without one, so a club that was
-  // away still removes every lodge deleted meanwhile.
-  const [lodges, owned, deletedLodges] = await Promise.all([
+  // A deleted lodge (#16) is never in `lodges` or the club's owned list; it is
+  // reported in `deletedLodges` instead, on the same `since`: every deletion
+  // newer than the club's cursor, or all of them on a pull without one, so a
+  // club that was away still hides every lodge deleted meanwhile.
+  const [lodges, owned, deleted] = await Promise.all([
     prisma.otherLodge.findMany({
       where: {
+        ...liveOtherLodgeWhere,
         ...(since ? { updatedAt: { gt: since } } : {}),
       },
       orderBy: otherLodgeOrderBy(),
       select: otherLodgeSelect,
     }),
     prisma.otherLodge.findMany({
-      where: { sourceClubId: club.id },
+      where: { sourceClubId: club.id, ...liveOtherLodgeWhere },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    prisma.deletedOtherLodge.findMany({
-      where: since ? { deletedAt: { gt: since } } : {},
+    prisma.otherLodge.findMany({
+      where: { deletedAt: since ? { gt: since } : { not: null } },
       orderBy: { deletedAt: "asc" },
       select: { id: true, deletedAt: true },
     }),
   ]);
+  const deletedLodges = deleted.flatMap((d) =>
+    d.deletedAt ? [{ id: d.id, deletedAt: d.deletedAt }] : [],
+  );
 
   const serialized = lodges.map(serializeOtherLodgeForClient);
   // The newest instant across the returned lodges AND deletions drives the
@@ -198,6 +204,8 @@ function itemDiffers(
  *                            (`similar-name`); a refused rename writes nothing
  *   - id owned by other   -> skipped, as for a name
  *   - id not known        -> skipped (`unknown-id`), never created
+ * A lodge an admin deleted (#16), matched by id or by name, is skipped as
+ * `deleted`: it is kept for the bookings that cite it and never changed again.
  * A rename moves `updatedAt`, so every other club's next pull carries the new
  * name under the same id and renames its copy in place.
  *
@@ -295,6 +303,13 @@ export async function POST(req: Request) {
           });
 
       const now = new Date();
+      // A deleted lodge (#16) is never changed again, by id or by its name
+      // (which stays taken): the club is told, and nothing is written.
+      if (existing?.deletedAt) {
+        skipped++;
+        results.push({ name, status: "skipped", reason: "deleted" });
+        continue;
+      }
       if (!existing && item.id) {
         // An id this server never issued, or a lodge since deleted. Never a
         // create: the club believes the lodge exists, and creating it under a

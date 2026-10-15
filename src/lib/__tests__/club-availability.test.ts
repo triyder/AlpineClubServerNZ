@@ -151,6 +151,7 @@ describe("loadAvailabilityTargets", () => {
       expect.objectContaining({
         where: {
           id: { in: ["ol_a", "ol_b"] },
+          deletedAt: null,
           sourceClub: { status: "APPROVED", pushEnabled: true, pushUrl: { not: null } },
         },
       }),

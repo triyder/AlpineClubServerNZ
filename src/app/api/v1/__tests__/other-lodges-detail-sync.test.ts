@@ -376,7 +376,7 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ownLodgeNames).toEqual(["Alpha Lodge", "Beta Lodge"]);
-    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1" });
+    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1", deletedAt: null });
   });
 
   it("returns an empty list for a club that owns nothing", async () => {
@@ -409,7 +409,7 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
     expect(body.lodges).toEqual([]);
     expect(body.ownLodgeNames).toEqual(["Alpha Lodge"]);
     // The owned query is not narrowed by `since`.
-    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1" });
+    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1", deletedAt: null });
   });
 
   it("takes the club from the token, never from the request", async () => {
@@ -420,7 +420,7 @@ describe("GET /api/v1/other-lodges (pull) tells the club which lodges it owns", 
         headers: { authorization: "Bearer acs_x_y" },
       }),
     );
-    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1" });
+    expect(ownedQuery()?.where).toEqual({ sourceClubId: "club_1", deletedAt: null });
   });
 
   it("keeps the envelope's existing fields", async () => {

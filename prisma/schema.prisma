@@ -289,26 +289,19 @@ model OtherLodge {
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  // Logically deleted (#16): set by the admin Delete, never cleared. The row
+  // stays, so a club's bookings that cite it keep working, and its name stays
+  // taken. Hidden from the public search, the clubs' pull (which reports it in
+  // `deletedLodges` instead) and every chooser; shown, marked, to admins.
+  deletedAt DateTime? @map("deleted_at")
 
   @@index([sourceClubId])
   @@index([imageId])
   @@index([logoId])
+  @@index([deletedAt])
   @@map("other_lodges")
 }
 
-// A lodge deleted from the registry (#16): its id, kept so every club's next
-// pull can be told to remove its copy, however stale its cursor. Written in the
-// same transaction as the delete. Keyed by the deleted lodge's id, never its
-// name, so a new lodge can reuse the name; ids are cuids and never reissued, so
-// a deleted lodge cannot reappear. Never undone (undeleting is out of scope).
-model DeletedOtherLodge {
-  id        String   @id
-  name      String
-  deletedAt DateTime @default(now()) @map("deleted_at")
-
-  @@index([deletedAt])
-  @@map("deleted_other_lodges")
-}
 
 // ---------------------------------------------------------------------------
 // Communication Portal — the cross-club message board.

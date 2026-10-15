@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 import { logger } from "@/lib/logger";
 import { derivePushSecret, signPushBody } from "@/lib/push-delivery";
 import { assertPublicDestination } from "@/lib/push-targets";
@@ -63,6 +64,7 @@ export async function loadAvailabilityTargets(
   const rows = await prisma.otherLodge.findMany({
     where: {
       id: { in: [...lodgeIds] },
+      ...liveOtherLodgeWhere,
       sourceClub: { status: "APPROVED", pushEnabled: true, pushUrl: { not: null } },
     },
     select: {

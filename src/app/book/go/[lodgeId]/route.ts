@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { isSafeHttpUrl } from "@/lib/other-lodges";
+import { isSafeHttpUrl, liveOtherLodgeWhere } from "@/lib/other-lodges";
 
 /**
  * GET /book/go/:lodgeId — "Book now". Sends the guest to the lodge's own
@@ -32,8 +32,9 @@ export async function GET(
     return NextResponse.redirect(back, 303);
   }
 
-  const lodge = await prisma.otherLodge.findUnique({
-    where: { id: lodgeId },
+  // A deleted lodge (#16) is not offered, so it has no booking page to go to.
+  const lodge = await prisma.otherLodge.findFirst({
+    where: { id: lodgeId, ...liveOtherLodgeWhere },
     select: { siteUrl: true },
   });
   const url = lodge?.siteUrl?.trim();

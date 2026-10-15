@@ -328,7 +328,7 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
   async function deleteLodge(lodge: SerializedOtherLodge) {
     if (
       !window.confirm(
-        `Delete "${lodge.name}"? This removes it from the registry for good.`,
+        `Delete "${lodge.name}"? It is hidden from the public search and from every club's lodge lists on their next download; bookings that already name it keep it. This cannot be undone.`,
       )
     ) {
       return;
@@ -801,7 +801,12 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                 </TableHeader>
                 <TableBody>
                   {lodges.map((lodge) => (
-                    <TableRow key={lodge.id}>
+                    <TableRow
+                      key={lodge.id}
+                      // A deleted lodge (#16) stays listed, faded red, and can
+                      // no longer be edited or deleted.
+                      className={lodge.deletedAt ? "bg-destructive/10 opacity-70" : undefined}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {lodge.logo ? (
@@ -819,6 +824,11 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                             >
                               {lodge.name}
                             </span>
+                            {lodge.deletedAt ? (
+                              <span className="ml-2 rounded bg-destructive/15 px-1.5 py-0.5 text-xs font-medium text-destructive">
+                                Deleted {formatDate(lodge.deletedAt)}
+                              </span>
+                            ) : null}
                             {lodge.amenities.length > 0 ? (
                               <span
                                 role="tooltip"
@@ -895,26 +905,28 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                       </TableCell>
                       {canManage ? (
                         <TableCell>
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => startEdit(lodge)}
-                              disabled={saving}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void deleteLodge(lodge)}
-                              disabled={saving}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </Button>
-                          </div>
+                          {lodge.deletedAt ? null : (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => startEdit(lodge)}
+                                disabled={saving}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void deleteLodge(lodge)}
+                                disabled={saving}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                       ) : null}
                     </TableRow>

@@ -153,9 +153,8 @@ Operator note for an installation that predates that change: migration
 announces them. After upgrading, make each club's **first** sync the full pass —
 upload, then download — rather than an incremental one.
 
-A lodge **deleted** on this server does not yet reach the clubs: the pull
-carries no tombstones, so a club keeps its copy until that is added (a
-follow-up issue; it will be an API version change).
+A lodge **deleted** on this server is a logical delete that reaches every club
+(API 2.4): see *Deletions* under the distribution loop below.
 
 #### Lodge details, amenities and rates (API versions 2.1 and 2.2)
 
@@ -416,16 +415,21 @@ without a version change).
    per-row "unchanged" skip makes the re-sent rows harmless. That overlap is
    what makes the incremental pull safe against a late commit.
 4. **Deletions (API 2.4).** Deleting a lodge (`DELETE /api/admin/other-lodges/:id`)
-   also writes a **tombstone** (`deleted_other_lodges`: the lodge's id, its
-   name and when it was deleted), in the same transaction. Every pull returns
-   `deletedLodges: [{ id, deletedAt }]`, oldest first: the deletions newer than
-   `since`, or every deletion on a pull without one. So a club removes its copy
-   however stale its cursor is. The `cursor` is the newest instant across the
-   returned lodges **and** deletions, so a pull that carried only deletions
-   still moves past them. A deleted lodge's id is never reissued, so it cannot
-   reappear, and a new lodge may take its name. Deletions are not undone. The
-   booking site removes its copy unless a booking or booking request there
-   still refers to it, in which case it keeps it and says so.
+   is a **logical** delete: it sets the lodge's `deleted_at` and keeps the row,
+   because clubs' bookings may cite it. On `/lodges` it stays listed with a
+   faded red background and a "Deleted" label, and can no longer be edited or
+   deleted. Its name stays taken. Everywhere else it is gone: the public
+   search and its free-bed checks, the club chooser, the pull's `lodges` and
+   `ownLodges`, and uploads, which skip it as `deleted` whether they name it
+   or quote its id.
+
+   Every pull returns `deletedLodges: [{ id, deletedAt }]`, oldest first: the
+   lodges deleted after `since`, or every deleted lodge on a pull without one,
+   so a club hides its copy however stale its cursor. The `cursor` is the
+   newest instant across the returned lodges **and** deletions, so a pull that
+   carried only deletions still moves past them. A deletion is not undone. The
+   booking site hides its copy from its lodge list and drop-downs, and keeps
+   it for the bookings and booking requests that name it.
 
 Admin-only:
 

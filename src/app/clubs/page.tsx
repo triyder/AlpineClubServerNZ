@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 import { ConsoleShell } from "@/components/console-shell";
 import { TokenGenerator } from "@/components/token-generator";
 import { ClubApiVersion } from "@/components/club-api-version";
@@ -52,7 +53,9 @@ export default async function ClubsPage() {
     }),
     // Every lodge with its owner, so each club's chooser can offer the free ones
     // and show who holds the rest.
+    // Live lodges only (#16): a deleted lodge is no longer given to any club.
     prisma.otherLodge.findMany({
+      where: liveOtherLodgeWhere,
       orderBy: [{ name: "asc" }, { id: "asc" }],
       select: {
         id: true,

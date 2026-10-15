@@ -60,6 +60,14 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: "Lodge not found" }, { status: 404 });
   }
+  // A deleted lodge (#16) is kept for the clubs' bookings that cite it, and is
+  // never edited again: undeleting is out of scope.
+  if (existing.deletedAt) {
+    return NextResponse.json(
+      { error: "This lodge has been deleted and can no longer be changed." },
+      { status: 409 },
+    );
+  }
 
   // Only assign the fields that were actually provided so a partial PATCH (e.g.
   // just the bed count) never clears the other columns.
@@ -221,13 +229,19 @@ export async function DELETE(
     return NextResponse.json({ error: "Lodge not found" }, { status: 404 });
   }
 
-  // The tombstone rides in the same transaction (#16): every club's next pull
-  // is told this id was deleted, however stale its cursor, so each removes its
-  // own copy. Never one without the other.
-  await prisma.$transaction([
-    prisma.otherLodge.delete({ where: { id: existing.id } }),
-    prisma.deletedOtherLodge.create({ data: { id: existing.id, name: existing.name } }),
-  ]);
+  if (existing.deletedAt) {
+    return NextResponse.json({ error: "This lodge is already deleted." }, { status: 409 });
+  }
+
+  // A LOGICAL delete (#16): the row stays, because clubs' bookings may cite it,
+  // and its name stays taken. Every club's next pull reports it in
+  // `deletedLodges`, however stale its cursor, and each hides its own copy.
+  // Guarded, so a second Delete at the same moment does not move the instant.
+  // `updatedAt` is left alone: the deletion is reported by `deletedAt`.
+  await prisma.otherLodge.updateMany({
+    where: { id: existing.id, deletedAt: null },
+    data: { deletedAt: new Date(), updatedAt: existing.updatedAt },
+  });
 
   await recordAudit({
     action: "otherLodge.delete",

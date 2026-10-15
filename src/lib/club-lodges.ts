@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 
 /**
  * Assign lodges to a club (`/clubs`): make the set of lodges the club owns equal
@@ -34,8 +35,9 @@ export async function assignClubLodges(
 
   try {
     return await prisma.$transaction(async (tx) => {
+      // A deleted lodge (#16) cannot be given to a club: it reads as missing.
       const wanted = await tx.otherLodge.findMany({
-        where: { id: { in: wantedIds } },
+        where: { id: { in: wantedIds }, ...liveOtherLodgeWhere },
         select: {
           id: true,
           name: true,
@@ -61,8 +63,9 @@ export async function assignClubLodges(
         };
       }
 
+      // The club's LIVE lodges: a deleted one keeps its owner untouched.
       const current = await tx.otherLodge.findMany({
-        where: { sourceClubId: clubId },
+        where: { sourceClubId: clubId, ...liveOtherLodgeWhere },
         select: { id: true, name: true },
       });
       const toRemove = current.filter((l) => !wantedIds.includes(l.id));
