@@ -67,6 +67,12 @@ services:
       # Private addresses club installs may be reached at (the reverse proxy on
       # this server's own network), comma-separated IP literals. Empty = none.
       ALLOWED_PRIVATE_CLUB_ADDRESSES: ${ALLOWED_PRIVATE_CLUB_ADDRESSES:-}
+      # This server's public address, e.g. https://alpine-server.example.nz.
+      # Set it when another proxy sits in front of Caddy and talks plain http
+      # to it: Caddy then reports the scheme as http, so every console edit is
+      # refused as coming from another site (#13) and image links handed to
+      # clubs start with http://. Empty = derive it from the proxy headers.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       # Communication Portal image storage. MUST be the volume mount below and
       # MUST stay outside the image: the Dockerfile copies `public/` from the
       # build stage, so anything written there is destroyed on every rebuild.
