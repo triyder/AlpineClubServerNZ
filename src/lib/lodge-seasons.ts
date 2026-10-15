@@ -106,14 +106,10 @@ function dayBefore(day: string): string {
   return DAYS_OF_YEAR[(at - 1 + DAYS_OF_YEAR.length) % DAYS_OF_YEAR.length] ?? day;
 }
 
-/** Every `MM-DD` of a leap year, 29 February included. */
-const DAYS_OF_YEAR: string[] = (() => {
-  const days: string[] = [];
-  for (let d = new Date(Date.UTC(2024, 0, 1)); d.getUTCFullYear() === 2024; d.setUTCDate(d.getUTCDate() + 1)) {
-    days.push(d.toISOString().slice(5, 10));
-  }
-  return days;
-})();
+/** Every `MM-DD` of a leap year, 29 February included, built from month lengths. */
+const DAYS_OF_YEAR: string[] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31].flatMap((length, month) =>
+  Array.from({ length }, (_, day) => `${String(month + 1).padStart(2, "0")}-${String(day + 1).padStart(2, "0")}`),
+);
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
