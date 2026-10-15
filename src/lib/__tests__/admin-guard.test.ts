@@ -63,6 +63,24 @@ describe("guardAdminWrite (#13)", () => {
     expect((await guardAdminWrite(req({ origin: "https://central.test" }), "manager")).ok).toBe(false);
   });
 
+  it("reads the first value of a comma-separated forwarded host (a chain of proxies)", async () => {
+    const out = await guardAdminWrite(
+      req({ "x-forwarded-host": "central.test, inner.proxy", origin: "https://central.test" }),
+      "manager",
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it("refuses with a reason, not a bare 500, when this server's own address is misconfigured", async () => {
+    process.env.PUBLIC_BASE_URL = "central.test";
+    const out = await guardAdminWrite(req({ origin: "https://central.test" }), "manager");
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.response.status).toBe(500);
+    expect((await out.response.json()).error).toMatch(/PUBLIC_BASE_URL/);
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
   it.each([
     "text/plain",
     "application/x-www-form-urlencoded",

@@ -252,7 +252,8 @@ Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
   stops ordinary cross-site requests but not one from a sibling subdomain, so
   a request whose `Origin` is not this server's own (`PUBLIC_BASE_URL`, else
   the proxy's forwarded host), or whose `Sec-Fetch-Site` is not
-  `same-origin`, is refused with `403`; a JSON route refuses any other body
+  `same-origin` (or `none`), is refused with `403`; `PUBLIC_BASE_URL`, when
+  set, must be exactly the address the console is opened at; a JSON route refuses any other body
   type with `415`. No session is `401`, and a signed-in user without the role
   `403`. A census test fails if a new admin write handler skips the guard.
 - **API auth** — clients present `Authorization: Bearer <token>` (or

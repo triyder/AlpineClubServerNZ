@@ -7,28 +7,12 @@ import { publicBaseUrl } from "@/lib/env";
 /**
  * Assert an authenticated session with sufficient privilege for admin actions.
  * ADMIN and MANAGER may review clubs and issue tokens; plain USER may not.
- * Throws on failure — callers are server actions / route handlers that treat a
- * throw as "not authorized".
+ * Throws on failure. For SERVER ACTIONS only (Next.js checks their origin);
+ * an admin API route uses `guardAdminWrite` or `guardAdminSession` below.
  */
 export async function requireManager(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session || (session.role !== "ADMIN" && session.role !== "MANAGER")) {
-    throw new Error("Not authorized");
-  }
-  return session;
-}
-
-/**
- * Assert an authenticated ADMIN session — stricter than `requireManager`, which
- * also admits MANAGER.
- *
- * The Communication Portal is admin-only: moderating the cross-club feed means
- * editing and permanently removing other clubs' members' content, so it is not
- * delegated to the manager tier that reviews clubs and issues tokens.
- */
-export async function requireAdmin(): Promise<SessionPayload> {
-  const session = await getSession();
-  if (!session || session.role !== "ADMIN") {
     throw new Error("Not authorized");
   }
   return session;
@@ -91,12 +75,29 @@ export async function guardAdminWrite(
 ): Promise<AdminGuardResult> {
   const origin = req.headers.get("origin");
   const site = req.headers.get("sec-fetch-site");
-  const own = new URL(publicBaseUrl(req)).origin;
+  let own: string;
+  try {
+    own = new URL(publicBaseUrl(req)).origin;
+  } catch {
+    // A PUBLIC_BASE_URL with no scheme, or a forwarded host that is not a
+    // host: this server cannot say what its own origin is, so it refuses the
+    // write with a reason an operator can act on, rather than a bare 500.
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "This server's own address is misconfigured (PUBLIC_BASE_URL or the proxy's forwarded host), so admin changes are refused until it is fixed." },
+        { status: 500 },
+      ),
+    };
+  }
   if ((origin !== null && origin !== own) || (site !== null && site !== "same-origin" && site !== "none")) {
     return {
       ok: false,
       response: NextResponse.json(
-        { error: "This request did not come from this console.", code: "CROSS_ORIGIN" },
+        {
+          error: "This request did not come from this console. Open the console at its usual address and try again.",
+          code: "CROSS_ORIGIN",
+        },
         { status: 403 },
       ),
     };
