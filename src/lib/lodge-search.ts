@@ -122,8 +122,8 @@ export function toPublicLodge(record: PublicLodgeRecord): PublicLodge {
 
 export const AGE_GROUPS = [
   { key: "under5", label: "Under 5", winter: "winterRateUnder5", summer: "summerRateUnder5" },
-  { key: "age5to11", label: "5–11", winter: "winterRate5To11", summer: "summerRate5To11" },
-  { key: "age12to17", label: "12–17", winter: "winterRate12To17", summer: "summerRate12To17" },
+  { key: "age5to11", label: "5–12", winter: "winterRate5To11", summer: "summerRate5To11" },
+  { key: "age12to17", label: "13–17", winter: "winterRate12To17", summer: "summerRate12To17" },
   { key: "adults", label: "18+", winter: "winterRateAdult", summer: "summerRateAdult" },
 ] as const satisfies ReadonlyArray<{
   key: string;

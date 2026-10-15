@@ -297,3 +297,16 @@ describe("the public lodge shape", () => {
     expect(toPublicLodge(record).picture).toBeNull();
   });
 });
+
+describe("guest age groups (owner, 16 Oct 2026)", () => {
+  it("are Under 5, 5–12, 13–17 and 18+, on the same rate fields as before", async () => {
+    const { AGE_GROUPS } = await import("@/lib/lodge-search");
+    expect(AGE_GROUPS.map((g) => g.label)).toEqual(["Under 5", "5–12", "13–17", "18+"]);
+    expect(AGE_GROUPS.map((g) => g.winter)).toEqual([
+      "winterRateUnder5",
+      "winterRate5To11",
+      "winterRate12To17",
+      "winterRateAdult",
+    ]);
+  });
+});
