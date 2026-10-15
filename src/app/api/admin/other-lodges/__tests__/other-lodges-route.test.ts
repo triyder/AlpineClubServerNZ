@@ -266,6 +266,16 @@ describe("DELETE /api/admin/other-lodges/[id] (a logical delete, #16)", () => {
     expect(auditCreate).toHaveBeenCalled();
   });
 
+  it("answers 409, with no audit row, when another Delete got there first", async () => {
+    updateMany.mockClear();
+    auditCreate.mockClear();
+    findUnique.mockResolvedValue(dbRow({ deletedAt: null }));
+    updateMany.mockResolvedValue({ count: 0 });
+    const res = await DELETE(jsonReq({}, "DELETE"), ctx("l1"));
+    expect(res.status).toBe(409);
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
   it("refuses to delete a lodge twice", async () => {
     updateMany.mockClear();
     findUnique.mockResolvedValue(dbRow({ deletedAt: new Date("2026-03-01T00:00:00.000Z") }));

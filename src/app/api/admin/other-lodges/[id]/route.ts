@@ -141,7 +141,8 @@ export async function PATCH(
   try {
     if (amenities === undefined || !amenitiesChanged) {
       updated = await prisma.otherLodge.update({
-        where: { id: existing.id },
+        // Not if a Delete landed since the read (#16): a deleted lodge is final.
+        where: { id: existing.id, deletedAt: null },
         data: { ...data, ...adminProvenance },
         select: otherLodgeSelect,
       });
@@ -157,7 +158,7 @@ export async function PATCH(
         const scalar: Prisma.OtherLodgeUpdateInput = { ...data };
         if (Object.keys(scalar).length === 0) scalar.updatedAt = new Date();
         await tx.otherLodge.update({
-          where: { id: existing.id },
+          where: { id: existing.id, deletedAt: null },
           data: { ...scalar, ...adminProvenance },
         });
         await replaceAmenities(tx, existing.id, amenities, existing.amenities);
@@ -174,6 +175,19 @@ export async function PATCH(
           { error: "A lodge with that name already exists." },
           { status: 409 },
         );
+      }
+      // The lodge deleted between the read and this write (#16).
+      if (error.code === "P2025") {
+        const now = await prisma.otherLodge.findUnique({
+          where: { id: existing.id },
+          select: { deletedAt: true },
+        });
+        if (now?.deletedAt) {
+          return NextResponse.json(
+            { error: "This lodge has been deleted and can no longer be changed." },
+            { status: 409 },
+          );
+        }
       }
       // A chosen picture deleted between the check above and this write.
       const picture = error.code === "P2025" ? chosenPictureLabel(parsed.data) : null;
@@ -238,10 +252,14 @@ export async function DELETE(
   // `deletedLodges`, however stale its cursor, and each hides its own copy.
   // Guarded, so a second Delete at the same moment does not move the instant.
   // `updatedAt` is left alone: the deletion is reported by `deletedAt`.
-  await prisma.otherLodge.updateMany({
+  const deleted = await prisma.otherLodge.updateMany({
     where: { id: existing.id, deletedAt: null },
     data: { deletedAt: new Date(), updatedAt: existing.updatedAt },
   });
+  // Another Delete got there first: one deletion, one audit row.
+  if (deleted.count !== 1) {
+    return NextResponse.json({ error: "This lodge is already deleted." }, { status: 409 });
+  }
 
   await recordAudit({
     action: "otherLodge.delete",

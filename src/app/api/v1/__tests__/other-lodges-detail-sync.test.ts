@@ -36,8 +36,6 @@ vi.mock("@/lib/db", () => ({
       update: (...a: unknown[]) => update(...a),
     },
     $transaction: (fn: (t: typeof tx) => unknown) => transaction(fn),
-    // Tombstones (#16): none unless a test says so.
-    deletedOtherLodge: { findMany: async () => [] },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -557,7 +555,7 @@ describe("POST /api/v1/other-lodges (upload) keyed by the lodge's id renames it 
     expect(body).toMatchObject({ updated: 1, created: 0, skipped: 0 });
     expect(body.results[0]).toEqual({ name: "Iwikau Lodge", status: "updated" });
     const call = update.mock.calls[0][0];
-    expect(call.where).toEqual({ id: "l1" });
+    expect(call.where).toEqual({ id: "l1", deletedAt: null });
     expect(call.data.name).toBe("Iwikau Lodge");
     expect(call.data.updatedAt).toBeInstanceOf(Date);
     expect(create).not.toHaveBeenCalled();

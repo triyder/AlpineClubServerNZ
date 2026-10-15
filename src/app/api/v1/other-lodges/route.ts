@@ -398,12 +398,13 @@ export async function POST(req: Request) {
               // Row first: its lock serialises the amenity replacement against
               // any overlapping writer (see replaceAmenities).
               await prisma.$transaction(async (tx) => {
-                await tx.otherLodge.update({ where: { id: existing.id }, data: write });
+                await tx.otherLodge.update({ where: { id: existing.id, deletedAt: null }, data: write });
                 await replaceAmenities(tx, existing.id, amenities, existing.amenities);
               });
             } else {
               await prisma.otherLodge.update({
-                where: { id: existing.id },
+                // Not if an admin deleted it since the read (#16).
+                where: { id: existing.id, deletedAt: null },
                 data: write,
               });
             }
@@ -416,6 +417,12 @@ export async function POST(req: Request) {
             ) {
               skipped++;
               results.push({ name, status: "skipped", reason: "name-taken" });
+              continue;
+            }
+            // Deleted by an admin since the read (#16): nothing was written.
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+              skipped++;
+              results.push({ name, status: "skipped", reason: "deleted" });
               continue;
             }
             throw error;

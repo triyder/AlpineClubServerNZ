@@ -53,8 +53,10 @@ export const imageSelect = {
   height: true,
   bytes: true,
   createdAt: true,
-  lodgesUsingAsImage: { select: { name: true }, orderBy: { name: "asc" } },
-  lodgesUsingAsLogo: { select: { name: true }, orderBy: { name: "asc" } },
+  // Live lodges only (#16): a deleted lodge cannot be edited, so it must not
+  // pin a picture in the library for good (its foreign key is SetNull).
+  lodgesUsingAsImage: { where: { deletedAt: null }, select: { name: true }, orderBy: { name: "asc" } },
+  lodgesUsingAsLogo: { where: { deletedAt: null }, select: { name: true }, orderBy: { name: "asc" } },
 } satisfies Prisma.ImageSelect;
 
 export type ImageRecord = Prisma.ImageGetPayload<{ select: typeof imageSelect }>;

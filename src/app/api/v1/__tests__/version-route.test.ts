@@ -22,8 +22,6 @@ vi.mock("@/lib/db", () => ({
       update: (...a: unknown[]) => issueUpdate(...a),
     },
     club: { update: (...a: unknown[]) => clubUpdate(...a) },
-    // Tombstones (#16): none unless a test says so.
-    deletedOtherLodge: { findMany: async () => [] },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
     otherLodge: { findMany: (...a: unknown[]) => lodgeFindMany(...a) },
   },

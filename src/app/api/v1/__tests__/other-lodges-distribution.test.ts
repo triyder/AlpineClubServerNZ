@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 // Mock token auth: tests set what the authenticated client looks like.
 const authenticate = vi.fn();
@@ -164,6 +165,17 @@ describe("GET /api/v1/other-lodges (pull)", () => {
     const json = await (await GET(req("GET", url))).json();
     // dbRow's updatedAt (1 Feb) is newer than the deletion (10 Jan).
     expect(json.cursor).toBe("2026-02-01T00:00:00.000Z");
+  });
+
+  it("skips an upload that loses a race with a Delete (the guarded write finds no live row)", async () => {
+    authenticate.mockResolvedValue(authOk(["lodges:write"]));
+    findUnique.mockResolvedValue({ id: "l1", name: "Tasman Lodge", sourceClubId: "club_1", deletedAt: null });
+    update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Record not found", { code: "P2025", clientVersion: "x" }),
+    );
+    const body = await (await POST(req("POST", url, { lodges: [{ name: "Tasman Lodge", bedCapacity: 5 }] }))).json();
+    expect(update.mock.calls[0][0].where).toEqual({ id: "l1", deletedAt: null });
+    expect(body.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "deleted" });
   });
 
   it("skips an upload of a deleted lodge, by name or by id, writing nothing (#16)", async () => {
