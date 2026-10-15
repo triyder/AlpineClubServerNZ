@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireManager } from "@/lib/admin-guard";
+import { guardAdminWrite } from "@/lib/admin-guard";
 import { generateApiToken } from "@/lib/api-tokens";
 import { createTokenSchema } from "@/lib/validation";
 import { recordAudit } from "@/lib/audit";
@@ -16,11 +16,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  try {
-    await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
 
   const { id } = await params;
   const club = await prisma.club.findUnique({ where: { id } });

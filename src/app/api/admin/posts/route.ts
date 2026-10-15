@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-guard";
+import { guardAdminSession } from "@/lib/admin-guard";
 import { publicBaseUrl } from "@/lib/env";
 import { listPostsForAdmin, parseTab } from "@/lib/post-admin";
 import { parseLimit, serializePostForAdmin } from "@/lib/posts";
@@ -18,11 +18,8 @@ const LIMIT_DEFAULT = 50;
 const LIMIT_MAX = 200;
 
 export async function GET(req: Request) {
-  try {
-    await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminSession("admin");
+  if (!guard.ok) return guard.response;
 
   const url = new URL(req.url);
   const rows = await listPostsForAdmin({

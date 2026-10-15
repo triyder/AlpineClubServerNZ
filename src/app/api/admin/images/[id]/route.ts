@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireManager } from "@/lib/admin-guard";
+import { guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import { logger } from "@/lib/logger";
@@ -19,12 +19,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const { id } = await params;
   let body: unknown;
@@ -78,12 +75,9 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const { id } = await params;
   const existing = await prisma.image.findUnique({

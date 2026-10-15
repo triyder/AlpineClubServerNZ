@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireManager } from "@/lib/admin-guard";
+import { guardAdminSession, guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import { logger } from "@/lib/logger";
@@ -26,11 +26,8 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/admin/images?kind=IMAGE|LOGO — the library, newest first. */
 export async function GET(req: Request) {
-  try {
-    await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminSession("manager");
+  if (!guard.ok) return guard.response;
 
   const kindParam = new URL(req.url).searchParams.get("kind");
   if (kindParam !== null && !isImageKind(kindParam)) {
@@ -54,12 +51,9 @@ export async function GET(req: Request) {
  * reported and the rest still go in, so one bad file does not lose a batch.
  */
 export async function POST(req: Request) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager", { body: "multipart" });
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   let form: FormData;
   try {

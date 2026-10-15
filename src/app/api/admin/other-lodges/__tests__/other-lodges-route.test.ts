@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requireManager = vi.fn();
-vi.mock("@/lib/admin-guard", () => ({
-  requireManager: () => requireManager(),
+// The real admin guard runs (#13); only the session under it is faked.
+const getSession = vi.fn();
+vi.mock("@/lib/auth/session", () => ({
+  getSession: () => getSession(),
 }));
 
 const create = vi.fn();
@@ -75,7 +76,7 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
-  requireManager.mockReset().mockResolvedValue(SESSION);
+  getSession.mockReset().mockResolvedValue(SESSION);
   create.mockReset();
   // Every name, read for the lookalike check; the GET tests override this.
   findMany.mockReset().mockResolvedValue([]);
@@ -86,10 +87,10 @@ beforeEach(() => {
 });
 
 describe("GET /api/admin/other-lodges", () => {
-  it("returns 401 when not a manager", async () => {
-    requireManager.mockRejectedValue(new Error("Not authorized"));
+  it("returns 403 when signed in but not a manager", async () => {
+    getSession.mockResolvedValue({ ...SESSION, role: "USER" });
     const res = await GET();
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
   });
 
   it("lists serialized lodges", async () => {

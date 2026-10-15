@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireManager } from "@/lib/admin-guard";
+import { guardAdminSession, guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import {
@@ -25,11 +25,8 @@ import {
 
 /** GET /api/admin/other-lodges — list the registry (admin/manager). */
 export async function GET() {
-  try {
-    await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminSession("manager");
+  if (!guard.ok) return guard.response;
 
   const otherLodges = await prisma.otherLodge.findMany({
     orderBy: otherLodgeOrderBy(),
@@ -43,12 +40,9 @@ export async function GET() {
 
 /** POST /api/admin/other-lodges — create a registry entry. */
 export async function POST(req: Request) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   let body: unknown;
   try {

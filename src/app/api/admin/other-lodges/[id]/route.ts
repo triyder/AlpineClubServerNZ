@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireManager } from "@/lib/admin-guard";
+import { guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import {
@@ -28,12 +28,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const { id } = await params;
   if (!id) {
@@ -218,12 +215,9 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const { id } = await params;
   if (!id) {

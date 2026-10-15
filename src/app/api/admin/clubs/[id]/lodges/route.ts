@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { liveOtherLodgeWhere } from "@/lib/other-lodges";
-import { requireManager } from "@/lib/admin-guard";
+import { guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import { assignClubLodges } from "@/lib/club-lodges";
@@ -27,12 +27,9 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireManager();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "manager");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const { id } = await params;
   let body: unknown;

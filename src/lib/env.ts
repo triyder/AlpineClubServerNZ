@@ -102,10 +102,11 @@ export function publicBaseUrl(req: Request): string {
   const configured = process.env.PUBLIC_BASE_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
 
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  const proto =
-    req.headers.get("x-forwarded-proto") ??
-    (process.env.NODE_ENV === "production" ? "https" : "http");
+  // A chain of proxies may send a comma-separated list: the first is the
+  // client-facing value.
+  const first = (name: string) => req.headers.get(name)?.split(",")[0]?.trim() || null;
+  const host = first("x-forwarded-host") ?? req.headers.get("host");
+  const proto = first("x-forwarded-proto") ?? (process.env.NODE_ENV === "production" ? "https" : "http");
 
   // Falling back to the request URL keeps this total: a malformed or absent
   // Host header yields a usable origin rather than throwing mid-serialisation.

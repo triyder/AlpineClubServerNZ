@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-guard";
+import { guardAdminSession, guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import {
@@ -19,21 +19,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminSession("admin");
+  if (!guard.ok) return guard.response;
   return NextResponse.json({ settings: await loadPostSettings() });
 }
 
 export async function PUT(req: Request) {
-  let session;
-  try {
-    session = await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "admin");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const body = await req.json().catch(() => null);
   const parsed = postSettingsSchema.safeParse(body);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/admin-guard";
+import { guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import { dismissReports } from "@/lib/post-admin";
@@ -31,12 +31,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const guard = await guardAdminWrite(req, "admin");
+  if (!guard.ok) return guard.response;
+  const session = guard.session;
 
   const { id } = await params;
   const raw = await req.json().catch(() => undefined);
