@@ -735,3 +735,20 @@ describe("POST /api/v1/other-lodges (upload): season end dates (API 2.6)", () =>
     expect(update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("POST /api/v1/other-lodges (upload): the seasons check comes after unknown-id and ownership", () => {
+  const overlapping = { winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-12-20", summerSeasonStart: "2026-12-01" };
+
+  it("answers unknown-id, with the id, for an id the server never issued", async () => {
+    findUnique.mockResolvedValue(null);
+    const body = await (await POST(req("POST", { lodges: [{ id: "gone", name: "Whakapapa Lodge", ...overlapping }] }))).json();
+    expect(body.results[0]).toMatchObject({ id: "gone", status: "skipped", reason: "unknown-id" });
+  });
+
+  it("answers owned-by-other-club, not seasons, for another club's lodge", async () => {
+    findUnique.mockResolvedValue(dbRow({ sourceClubId: "club_other" }));
+    const body = await (await POST(req("POST", { lodges: [{ id: "l1", name: "Whakapapa Lodge", ...overlapping }] }))).json();
+    expect(body.results[0]).toMatchObject({ id: "l1", status: "skipped", reason: "owned-by-other-club" });
+  });
+});
+

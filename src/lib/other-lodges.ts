@@ -216,7 +216,6 @@ export type SerializedLodgeDetail = { [K in LodgeTextField]: string | null } & {
   roomType: LodgeRoomTypeValue | null;
 } & { amenities: LodgeAmenity[] };
 
-/** `YYYY-MM-DD` for a DATE column (read back as UTC midnight), or null. */
 /**
  * The season dates a write would leave stored: each date the write carries
  * (`null` clears it), else the row's. What `seasonDatesProblem`
@@ -234,6 +233,7 @@ export function seasonDatesAfter(
   ) as Record<LodgeDateField, string | null>;
 }
 
+/** `YYYY-MM-DD` for a DATE column (read back as UTC midnight), or null. */
 export function formatLodgeDate(date: Date | null): string | null {
   return date ? date.toISOString().slice(0, 10) : null;
 }

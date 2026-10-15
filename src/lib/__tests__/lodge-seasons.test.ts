@@ -88,3 +88,28 @@ describe("seasonSpanText and hasSeasons", () => {
     expect(hasSeasons({})).toBe(false);
   });
 });
+
+describe("the leap day and seasons that start together (review fixes)", () => {
+  it("gives 29 February to a season ending 28 February, unless the other season starts that day", () => {
+    const dates = {
+      summerSeasonStart: "2026-11-01",
+      summerSeasonEnd: "2027-02-28",
+      winterSeasonStart: "2026-03-01",
+      winterSeasonEnd: "2026-10-31",
+    };
+    expect(seasonDatesProblem(dates)).toBeNull();
+    expect(seasonForNight("2028-02-29", dates)).toBe("summer");
+    expect(seasonForNight("2028-03-01", dates)).toBe("winter");
+    const winterOnTheLeapDay = { ...dates, winterSeasonStart: "2028-02-29" };
+    expect(seasonForNight("2028-02-29", winterOnTheLeapDay)).toBe("winter");
+    expect(seasonDatesProblem(winterOnTheLeapDay)).toBeNull();
+  });
+
+  it("refuses two seasons that start the same day with no ends, or a no-end season starting with the other", () => {
+    expect(seasonDatesProblem({ winterSeasonStart: "2026-06-01", summerSeasonStart: "2027-06-01" })).toMatch(/cannot start on the same day/);
+    expect(
+      seasonDatesProblem({ winterSeasonStart: "2026-06-01", summerSeasonStart: "2026-06-01", summerSeasonEnd: "2026-09-30" }),
+    ).toMatch(/winter season has no end date and starts the same day/);
+  });
+});
+

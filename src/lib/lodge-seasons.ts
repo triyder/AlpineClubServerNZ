@@ -14,6 +14,10 @@
  *    different days (`seasonDatesProblem`).
  *
  * No `server-only` import: the admin panel checks the dates before a save.
+ *
+ * `seasonDatesProblem` is COPIED to AlpineClubBookingsNZ
+ * `src/lib/other-lodge-seasons.ts` (another repository), which checks a club's
+ * dates before they are uploaded: change the two together.
  */
 
 export type Season = "winter" | "summer";
@@ -54,10 +58,20 @@ function inRange(day: string, range: Range): boolean {
 }
 
 function ranges(dates: SeasonDates): { winter: Range | null; summer: Range | null } {
-  return {
-    winter: rangeOf(dates.winterSeasonStart, dates.winterSeasonEnd, dates.summerSeasonStart),
-    summer: rangeOf(dates.summerSeasonStart, dates.summerSeasonEnd, dates.winterSeasonStart),
-  };
+  const winter = rangeOf(dates.winterSeasonStart, dates.winterSeasonEnd, dates.summerSeasonStart);
+  const summer = rangeOf(dates.summerSeasonStart, dates.summerSeasonEnd, dates.winterSeasonStart);
+  return { winter: leapDayCovered(winter, summer), summer: leapDayCovered(summer, winter) };
+}
+
+/**
+ * A season ending on 28 February also takes 29 February in a leap year, unless
+ * the other season starts that day: a date picker set to a common year cannot
+ * offer the 29th, and a summer ending 28 February with a winter starting
+ * 1 March must not leave the leap day in neither season.
+ */
+function leapDayCovered(range: Range | null, other: Range | null): Range | null {
+  if (!range || !range.inclusive || range.end !== "02-28" || other?.start === "02-29") return range;
+  return { ...range, end: "02-29" };
 }
 
 /** The season a night (`YYYY-MM-DD`) falls in, or null when it is in neither. */
@@ -124,6 +138,16 @@ export function seasonDatesProblem(dates: SeasonDates): string | null {
     }
   }
   const { winter, summer } = ranges(dates);
+  if (dates.winterSeasonStart && dates.summerSeasonStart && !dates.winterSeasonEnd && !dates.summerSeasonEnd
+    && monthDay(dates.winterSeasonStart) === monthDay(dates.summerSeasonStart)) {
+    return "The winter and summer seasons cannot start on the same day.";
+  }
+  for (const [label, range] of [["winter", winter], ["summer", summer]] as const) {
+    // A season with no end running to the other's start, which is its own.
+    if (range && !range.inclusive && range.start === range.end) {
+      return `The ${label} season has no end date and starts the same day as the other season. Give it an end date.`;
+    }
+  }
   if (!winter || !summer) return null;
   const shared = DAYS_OF_YEAR.find((day) => inRange(day, winter) && inRange(day, summer));
   return shared

@@ -44,8 +44,6 @@ const BOOLEAN_FIELDS = LODGE_BOOLEAN_FIELDS.map((key) => ({
   label: LODGE_FACILITY_LABELS[key],
 }));
 
-// The rate grid: a row per season, a column per guideline age group. Typed
-// over the field list, so a rate field missing from the grid is a type error.
 /** The season date fields, in the order they are shown (two per row). */
 const SEASON_DATE_FIELDS = [
   { key: "winterSeasonStart", id: "ol-winter-start", label: "Winter season start date" },
@@ -54,6 +52,8 @@ const SEASON_DATE_FIELDS = [
   { key: "summerSeasonEnd", id: "ol-summer-end", label: "Summer season end date" },
 ] as const;
 
+// The rate grid: a row per season, a column per guideline age group. Typed
+// over the field list, so a rate field missing from the grid is a type error.
 const RATE_AGE_GROUPS = ["Under 5", "5–12", "13–17", "18+"] as const;
 const RATE_GRID: ReadonlyArray<{
   season: string;
@@ -602,11 +602,16 @@ export function OtherLodgesPanel({ canManage }: { canManage: boolean }) {
                   <Input
                     id={id}
                     type="date"
+                    aria-describedby="ol-season-hint"
                     value={form[key]}
                     onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}
                   />
                 </div>
               ))}
+              <p id="ol-season-hint" className="text-xs text-muted-foreground sm:col-span-2">
+                Seasons repeat every year: only the day and month are used. The end date is the
+                season&apos;s last day. Leave an end blank to run the season until the other one starts.
+              </p>
             </div>
 
             <fieldset className="space-y-2">

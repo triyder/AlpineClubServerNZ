@@ -234,7 +234,7 @@ export function LodgeResultRow({
             ) : (
               <span className="text-muted-foreground">
                 {estimate.missing === "out-of-season"
-                  ? "Price not available for these dates: they are outside this lodge's winter and summer seasons."
+                  ? "Price not available for these dates: at least one night is outside this lodge's winter and summer seasons."
                   : "No estimate: this lodge has not given every rate or season date needed."}
               </span>
             )}
