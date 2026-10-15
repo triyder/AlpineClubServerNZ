@@ -169,7 +169,8 @@ async function pruneStubs(horizon: Date): Promise<number> {
 }
 
 /**
- * Delete files under UPLOADS_DIR with no matching row.
+ * Delete files under UPLOADS_DIR with no matching row: neither a post image
+ * nor an image-library picture names it.
  *
  * Collects both the leftovers of a crash between the row write and the unlink,
  * and derivatives written by an upload whose transaction later rolled back.
@@ -201,12 +202,15 @@ async function collectOrphans(now: Date): Promise<number> {
     // and committing its row, and deleting it would break a live post.
     if (now.getTime() - info.mtimeMs < ORPHAN_MIN_AGE_MS) continue;
 
+    // A file is in use if ANY row names it: a post's image OR an image-library
+    // picture (a lodge picture or logo, stored under the same root). Checking
+    // the post images alone deleted every library picture older than a day.
     const key = entry.split(path.sep).join("/");
-    const referenced = await prisma.postImage.findFirst({
-      where: { storageKey: key },
-      select: { id: true },
-    });
-    if (referenced) continue;
+    const [postImage, libraryImage] = await Promise.all([
+      prisma.postImage.findFirst({ where: { storageKey: key }, select: { id: true } }),
+      prisma.image.findFirst({ where: { storageKey: key }, select: { id: true } }),
+    ]);
+    if (postImage || libraryImage) continue;
 
     try {
       await unlink(absolute);

@@ -4,9 +4,11 @@ const settings = vi.fn();
 vi.mock("@/lib/settings", () => ({ loadPostSettings: () => settings() }));
 
 const deleteStoredImage = vi.fn().mockResolvedValue(true);
+// The sweep reads a real folder only where a test points it at one.
+let uploadsRootDir = "/nonexistent-uploads-root";
 vi.mock("@/lib/uploads", () => ({
   deleteStoredImage: (...a: unknown[]) => deleteStoredImage(...a),
-  uploadsRoot: () => "/nonexistent-uploads-root",
+  uploadsRoot: () => uploadsRootDir,
 }));
 
 const claimUpdateMany = vi.fn();
@@ -17,6 +19,7 @@ const postDeleteMany = vi.fn();
 const postUpdate = vi.fn();
 const imageDeleteMany = vi.fn();
 const imageFindFirst = vi.fn();
+const libraryImageFindFirst = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -33,6 +36,10 @@ vi.mock("@/lib/db", () => ({
     postImage: {
       deleteMany: (...a: unknown[]) => imageDeleteMany(...a),
       findFirst: (...a: unknown[]) => imageFindFirst(...a),
+    },
+    // The image library's lodge pictures and logos (#5), stored under the same root.
+    image: {
+      findFirst: (...a: unknown[]) => libraryImageFindFirst(...a),
     },
     // The pass batches its row writes; the mock just resolves the array.
     $transaction: (ops: unknown[]) => Promise.all(ops),
@@ -56,6 +63,8 @@ beforeEach(() => {
   postUpdate.mockReset().mockResolvedValue({});
   imageDeleteMany.mockReset().mockResolvedValue({ count: 0 });
   imageFindFirst.mockReset().mockResolvedValue(null);
+  libraryImageFindFirst.mockReset().mockResolvedValue(null);
+  uploadsRootDir = "/nonexistent-uploads-root";
   deleteStoredImage.mockReset().mockResolvedValue(true);
   settings.mockReset().mockResolvedValue({
     retentionDays: 365,
@@ -189,5 +198,47 @@ describe("post-cleanup — retention", () => {
     // is concerned; the stranded file becomes an orphan the sweep collects.
     expect(stats.expired).toBe(1);
     expect(stats.filesUnlinked).toBe(1);
+  });
+});
+
+describe("post-cleanup — the orphan sweep keeps every file a row names", () => {
+  it("keeps a post image AND an image-library picture, and collects only a true orphan", async () => {
+    const { mkdtemp, mkdir, writeFile, utimes, readdir, rm } = await import("node:fs/promises");
+    const path = await import("node:path");
+    const os = await import("node:os");
+    const root = await mkdtemp(path.join(os.tmpdir(), "uploads-"));
+    try {
+      const files = {
+        post: "posts/2026/01/aaaa.webp",
+        library: "library/2026/01/bbbb.webp",
+        orphan: "library/2026/01/cccc.webp",
+      };
+      const old = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
+      for (const key of Object.values(files)) {
+        const absolute = path.join(root, ...key.split("/"));
+        await mkdir(path.dirname(absolute), { recursive: true });
+        await writeFile(absolute, "x");
+        await utimes(absolute, old, old);
+      }
+      uploadsRootDir = root;
+      claimGranted();
+      imageFindFirst.mockImplementation(async ({ where }: { where: { storageKey: string } }) =>
+        where.storageKey === files.post ? { id: "pi1" } : null,
+      );
+      libraryImageFindFirst.mockImplementation(async ({ where }: { where: { storageKey: string } }) =>
+        where.storageKey === files.library ? { id: "img1" } : null,
+      );
+
+      const stats = await runPostCleanup({ trigger: "manual", now: NOW });
+
+      const left = (await readdir(root, { recursive: true }))
+        .map((e) => String(e).split(path.sep).join("/"))
+        .filter((e) => e.endsWith(".webp"))
+        .sort();
+      expect(left).toEqual([files.library, files.post].sort());
+      expect(stats).toMatchObject({ orphansCollected: 1 });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
