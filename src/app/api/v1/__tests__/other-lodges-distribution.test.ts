@@ -25,10 +25,24 @@ function pullReads(rows: { live?: unknown[]; deleted?: unknown[] }) {
     return rows.live ?? [];
   });
 }
+/**
+ * An upload item without an id (#69) reads the club's OWN lodges of that name
+ * with `findMany`. Answered from the `findUnique` mock, which the tests set to
+ * the stored row, so each test states the one stored lodge either way.
+ */
+async function ownByName(args: { where: { name: string; sourceClubId: string } }) {
+  const row = (await findUnique(args)) as { sourceClubId?: string | null } | null;
+  return row && row.sourceClubId === args.where.sourceClubId ? [row] : [];
+}
+const isOwnByName = (args: unknown) => {
+  const where = (args as { where?: Record<string, unknown> } | undefined)?.where;
+  return !!where && "name" in where && "sourceClubId" in where;
+};
 vi.mock("@/lib/db", () => ({
   prisma: {
     otherLodge: {
-      findMany: (...a: unknown[]) => findMany(...a),
+      findMany: (...a: unknown[]) =>
+        isOwnByName(a[0]) ? ownByName(a[0] as Parameters<typeof ownByName>[0]) : findMany(...a),
       findUnique: (...a: unknown[]) => findUnique(...a),
       create: (...a: unknown[]) => create(...a),
       update: (...a: unknown[]) => update(...a),
@@ -175,7 +189,7 @@ describe("GET /api/v1/other-lodges (pull)", () => {
     );
     const body = await (await POST(req("POST", url, { lodges: [{ name: "Tasman Lodge", bedCapacity: 5 }] }))).json();
     expect(update.mock.calls[0][0].where).toEqual({ id: "l1", deletedAt: null });
-    expect(body.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "deleted" });
+    expect(body.results[0]).toEqual({ id: "l1", name: "Tasman Lodge", status: "skipped", reason: "deleted" });
   });
 
   it("skips an upload of a deleted lodge, by name or by id, writing nothing (#16)", async () => {
@@ -183,8 +197,9 @@ describe("GET /api/v1/other-lodges (pull)", () => {
     findUnique.mockResolvedValue({ id: "l1", name: "Tasman Lodge", sourceClubId: "club_1", deletedAt: new Date() });
     const byName = await (await POST(req("POST", url, { lodges: [{ name: "Tasman Lodge", bedCapacity: 3 }] }))).json();
     const byId = await (await POST(req("POST", url, { lodges: [{ id: "l1", name: "Tasman Lodge" }] }))).json();
-    expect(byName.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "deleted" });
-    expect(byId.results[0]).toEqual({ name: "Tasman Lodge", status: "skipped", reason: "deleted" });
+    const skippedDeleted = { id: "l1", name: "Tasman Lodge", status: "skipped", reason: "deleted" };
+    expect(byName.results[0]).toEqual(skippedDeleted);
+    expect(byId.results[0]).toEqual(skippedDeleted);
     expect(update).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });
@@ -274,7 +289,7 @@ describe("POST /api/v1/other-lodges (upload)", () => {
     authenticate.mockResolvedValue(authOk(["lodges:write"]));
     findUnique.mockResolvedValue({ id: "l1", sourceClubId: null }); // central
     const res = await POST(
-      req("POST", url, { lodges: [{ name: "Central Lodge" }] }),
+      req("POST", url, { lodges: [{ id: "l1", name: "Central Lodge" }] }),
     );
     const json = await res.json();
     expect(json).toMatchObject({ created: 0, updated: 0, skipped: 1 });

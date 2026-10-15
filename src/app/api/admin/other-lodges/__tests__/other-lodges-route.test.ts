@@ -140,16 +140,28 @@ describe("POST /api/admin/other-lodges", () => {
     expect(res.status).toBe(400);
   });
 
-  it("maps a duplicate name to 409", async () => {
-    const { Prisma } = await import("@prisma/client");
-    create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("dup", {
-        code: "P2002",
-        clientVersion: "7",
-      }),
-    );
+  it("asks first (409, code similar-name) for a name another live lodge has, creating nothing (#69)", async () => {
+    findMany.mockResolvedValue([{ name: "Ruapehu Lodge" }]);
     const res = await POST(jsonReq({ name: "Ruapehu Lodge" }));
     expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Another lodge is already called "Ruapehu Lodge". Save anyway?',
+      code: "similar-name",
+      similarTo: "Ruapehu Lodge",
+    });
+    // Only live lodges are compared: a deleted one does not ask.
+    expect(findMany.mock.calls[0][0].where).toEqual({ deletedAt: null });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("creates a second lodge of the same name once the administrator confirms", async () => {
+    findMany.mockResolvedValue([{ name: "Ruapehu Lodge" }]);
+    create.mockResolvedValue(dbRow());
+    const res = await POST(jsonReq({ name: "Ruapehu Lodge", allowSimilarName: true }));
+    expect(res.status).toBe(201);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(create.mock.calls[0][0].data.name).toBe("Ruapehu Lodge");
+    expect(create.mock.calls[0][0].data).not.toHaveProperty("allowSimilarName");
   });
 
   it.each([
@@ -218,10 +230,23 @@ describe("PATCH /api/admin/other-lodges/[id]", () => {
     findMany.mockResolvedValue([{ name: "Tasman Lodge" }]);
     const res = await PATCH(jsonReq({ name: "tasman​ lodge" }, "PATCH"), ctx("l1"));
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toContain("Tasman Lodge");
-    // The lodge's own current name is excluded from the comparison.
-    expect(findMany.mock.calls[0][0].where).toEqual({ id: { not: "l1" } });
+    const body = await res.json();
+    expect(body.error).toContain("Tasman Lodge");
+    expect(body.code).toBe("similar-name");
+    // The lodge's own current name, and deleted lodges, are not compared.
+    expect(findMany.mock.calls[0][0].where).toEqual({ deletedAt: null, id: { not: "l1" } });
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("renames onto another lodge's name once the administrator confirms (#69)", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    findMany.mockResolvedValue([{ name: "Tasman Lodge" }]);
+    update.mockResolvedValue(dbRow({ name: "Tasman Lodge" }));
+    const res = await PATCH(jsonReq({ name: "Tasman Lodge", allowSimilarName: true }, "PATCH"), ctx("l1"));
+    expect(res.status).toBe(200);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(update.mock.calls[0][0].data).toMatchObject({ name: "Tasman Lodge" });
+    expect(update.mock.calls[0][0].data).not.toHaveProperty("allowSimilarName");
   });
 
   it("a rename that changes only the case of its OWN name is allowed", async () => {

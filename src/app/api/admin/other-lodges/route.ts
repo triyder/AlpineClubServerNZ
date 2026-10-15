@@ -12,7 +12,9 @@ import {
   otherLodgeCreateSchema,
   otherLodgeOrderBy,
   otherLodgeSelect,
+  liveOtherLodgeWhere,
   serializeOtherLodge,
+  SIMILAR_LODGE_NAME_CODE,
   similarLodgeNameMessage,
 } from "@/lib/other-lodges";
 import {
@@ -68,18 +70,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: pictureError }, { status: 400 });
   }
 
-  // A name that only LOOKS like an existing one (see normalizeLodgeNameKey).
-  // The table is small, so every name is compared; the check is app-level and
-  // a concurrent create can slip past it — the unique index still holds the
-  // exact name.
+  // Names are not unique (#69), but a name another live lodge has, or one
+  // that only LOOKS like it (see normalizeLodgeNameKey), is checked with the
+  // administrator first: a 409 the admin page answers by resending with
+  // `allowSimilarName`. The table is small, so every name is compared.
   const name = parsed.data.name.trim();
-  const similar = findSimilarLodgeName(
-    name,
-    (await prisma.otherLodge.findMany({ select: { name: true } })).map((l) => l.name),
-  );
+  const similar = parsed.data.allowSimilarName
+    ? null
+    : findSimilarLodgeName(
+        name,
+        (
+          await prisma.otherLodge.findMany({ where: liveOtherLodgeWhere, select: { name: true } })
+        ).map((l) => l.name),
+      );
   if (similar) {
     return NextResponse.json(
-      { error: similarLodgeNameMessage(similar) },
+      { error: similarLodgeNameMessage(similar), code: SIMILAR_LODGE_NAME_CODE, similarTo: similar },
       { status: 409 },
     );
   }
@@ -111,13 +117,6 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // Unique(name): duplicate typed by the admin or a concurrent create.
-      if (error.code === "P2002") {
-        return NextResponse.json(
-          { error: "A lodge with that name already exists." },
-          { status: 409 },
-        );
-      }
       // A chosen picture deleted between the check above and this write.
       const picture = error.code === "P2025" ? chosenPictureLabel(parsed.data) : null;
       if (picture) {
