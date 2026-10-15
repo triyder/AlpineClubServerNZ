@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requireManager = vi.fn();
-vi.mock("@/lib/admin-guard", () => ({
-  requireManager: () => requireManager(),
+// The real admin guard runs (#13); only the session under it is faked.
+const getSession = vi.fn();
+vi.mock("@/lib/auth/session", () => ({
+  getSession: () => getSession(),
 }));
 
 const clubFindUnique = vi.fn();
@@ -33,7 +34,7 @@ const req = (body: unknown) =>
   });
 
 beforeEach(() => {
-  requireManager.mockReset().mockResolvedValue(SESSION);
+  getSession.mockReset().mockResolvedValue(SESSION);
   clubFindUnique.mockReset().mockResolvedValue({ id: "club_1", status: "APPROVED" });
   lodgeFindMany.mockReset().mockResolvedValue([{ id: "a", name: "Alpha" }]);
   assign.mockReset().mockResolvedValue({ ok: true, added: ["Alpha"], removed: [] });
@@ -41,10 +42,10 @@ beforeEach(() => {
 });
 
 describe("PUT /api/admin/clubs/:id/lodges", () => {
-  it("401 for a caller who is not an admin or manager, and changes nothing", async () => {
-    requireManager.mockRejectedValue(new Error("Not authorized"));
+  it("403 for a signed-in caller who is not an admin or manager, and changes nothing", async () => {
+    getSession.mockResolvedValue({ ...SESSION, role: "USER" });
     const res = await PUT(req({ lodgeIds: ["a"] }), ctx());
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
     expect(assign).not.toHaveBeenCalled();
   });
 

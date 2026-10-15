@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 
-const requireManager = vi.fn();
-vi.mock("@/lib/admin-guard", () => ({
-  requireManager: () => requireManager(),
+// The real admin guard runs (#13); only the session under it is faked.
+const getSession = vi.fn();
+vi.mock("@/lib/auth/session", () => ({
+  getSession: () => getSession(),
 }));
 
 const create = vi.fn();
@@ -79,7 +80,7 @@ const jsonReq = (method: string, body: unknown) =>
 const ctx = { params: Promise.resolve({ id: "l1" }) };
 
 beforeEach(() => {
-  requireManager.mockReset().mockResolvedValue(SESSION);
+  getSession.mockReset().mockResolvedValue(SESSION);
   create.mockReset().mockResolvedValue(dbRow());
   findUnique.mockReset().mockResolvedValue(dbRow());
   update.mockReset().mockResolvedValue(dbRow());

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requireManager = vi.fn();
-vi.mock("@/lib/admin-guard", () => ({
-  requireManager: () => requireManager(),
+// The real admin guard runs (#13); only the session under it is faked.
+const getSession = vi.fn();
+vi.mock("@/lib/auth/session", () => ({
+  getSession: () => getSession(),
 }));
 
 const calls: string[] = [];
@@ -96,7 +97,7 @@ const ctx = (id = "i1") => ({ params: Promise.resolve({ id }) });
 
 beforeEach(() => {
   calls.length = 0;
-  requireManager.mockReset().mockResolvedValue(SESSION);
+  getSession.mockReset().mockResolvedValue(SESSION);
   findMany.mockReset().mockResolvedValue([]);
   findUnique.mockReset();
   create.mockReset().mockImplementation(async () => row());
@@ -108,10 +109,10 @@ beforeEach(() => {
 });
 
 describe("GET /api/admin/images", () => {
-  it("401 for a caller who is not a manager", async () => {
-    requireManager.mockRejectedValue(new Error("Not authorized"));
+  it("403 for a signed-in caller who is not a manager", async () => {
+    getSession.mockResolvedValue({ ...SESSION, role: "USER" });
     const res = await GET(new Request("https://s/api/admin/images"));
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
     expect(findMany).not.toHaveBeenCalled();
   });
 
@@ -141,10 +142,10 @@ describe("GET /api/admin/images", () => {
 });
 
 describe("POST /api/admin/images", () => {
-  it("401 for a caller who is not a manager, and stores nothing", async () => {
-    requireManager.mockRejectedValue(new Error("Not authorized"));
+  it("403 for a signed-in caller who is not a manager, and stores nothing", async () => {
+    getSession.mockResolvedValue({ ...SESSION, role: "USER" });
     const res = await POST(uploadReq({ kind: "IMAGE", files: [pngFile()] }));
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
     expect(write).not.toHaveBeenCalled();
   });
 
@@ -242,10 +243,10 @@ describe("POST /api/admin/images", () => {
 });
 
 describe("PATCH /api/admin/images/:id", () => {
-  it("401 for a caller who is not a manager", async () => {
-    requireManager.mockRejectedValue(new Error("Not authorized"));
+  it("403 for a signed-in caller who is not a manager", async () => {
+    getSession.mockResolvedValue({ ...SESSION, role: "USER" });
     const res = await PATCH(jsonReq("PATCH", { name: "x" }), ctx());
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
   });
 
   it("400 for a blank name and for trying to change the type", async () => {
@@ -270,9 +271,9 @@ describe("PATCH /api/admin/images/:id", () => {
 });
 
 describe("DELETE /api/admin/images/:id", () => {
-  it("401 for a caller who is not a manager", async () => {
-    requireManager.mockRejectedValue(new Error("Not authorized"));
-    expect((await DELETE(new Request("https://s/x"), ctx())).status).toBe(401);
+  it("403 for a signed-in caller who is not a manager", async () => {
+    getSession.mockResolvedValue({ ...SESSION, role: "USER" });
+    expect((await DELETE(new Request("https://s/x"), ctx())).status).toBe(403);
     expect(del).not.toHaveBeenCalled();
   });
 

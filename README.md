@@ -246,6 +246,15 @@ Schema: [`prisma/schema.prisma`](prisma/schema.prisma). Baseline migration:
   `/dashboard`, `/clubs`, `/lodges`, `/issues`, `/admin`, `/audit`,
   `/profile`, `/posts` and `/settings` (a test fails if a page is added
   outside that list).
+- **Admin API writes** — every state-changing `/api/admin/*` handler (POST,
+  PUT, PATCH, DELETE) calls `guardAdminWrite` first
+  ([`src/lib/admin-guard.ts`](src/lib/admin-guard.ts), #13). `SameSite=Lax`
+  stops ordinary cross-site requests but not one from a sibling subdomain, so
+  a request whose `Origin` is not this server's own (`PUBLIC_BASE_URL`, else
+  the proxy's forwarded host), or whose `Sec-Fetch-Site` is not
+  `same-origin`, is refused with `403`; a JSON route refuses any other body
+  type with `415`. No session is `401`, and a signed-in user without the role
+  `403`. A census test fails if a new admin write handler skips the guard.
 - **API auth** — clients present `Authorization: Bearer <token>` (or
   `X-API-Key`). Tokens are `acs_<prefix>_<secret>`; the server looks up the row
   by the non-secret prefix and verifies the secret against the stored SHA-256
