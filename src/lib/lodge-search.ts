@@ -1,8 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { imageRefSelect, toImageRef } from "@/lib/image-library";
+import { hasSeasons, seasonForNight } from "@/lib/lodge-seasons";
 import {
   formatLodgeDate,
   LODGE_BOOLEAN_FIELDS,
+  LODGE_DATE_FIELDS,
   LODGE_RATE_FIELDS,
   rateToNumber,
   type LodgeBooleanField,
@@ -42,8 +44,7 @@ export const publicLodgeSelect = {
   singleBeds: true,
   cancellationPeriod: true,
   siteUrl: true,
-  winterSeasonStart: true,
-  summerSeasonStart: true,
+  ...selectAll(LODGE_DATE_FIELDS),
   ...selectAll(LODGE_BOOLEAN_FIELDS),
   ...selectAll(LODGE_RATE_FIELDS),
   amenities: {
@@ -80,7 +81,9 @@ export interface PublicLodge {
   amenities: Array<{ name: string; description: string | null }>;
   rates: Record<LodgeRateField, number | null>;
   winterSeasonStart: string | null;
+  winterSeasonEnd: string | null;
   summerSeasonStart: string | null;
+  summerSeasonEnd: string | null;
   /** The lodge image, else its logo, else null (the page shows "No image"). */
   picture: PublicLodgePicture | null;
 }
@@ -106,7 +109,9 @@ export function toPublicLodge(record: PublicLodgeRecord): PublicLodge {
       LODGE_RATE_FIELDS.map((key) => [key, rateToNumber(record[key])]),
     ) as Record<LodgeRateField, number | null>,
     winterSeasonStart: formatLodgeDate(record.winterSeasonStart),
+    winterSeasonEnd: formatLodgeDate(record.winterSeasonEnd),
     summerSeasonStart: formatLodgeDate(record.summerSeasonStart),
+    summerSeasonEnd: formatLodgeDate(record.summerSeasonEnd),
     picture: image
       ? { url: image.url, kind: "image" }
       : logo
@@ -299,38 +304,19 @@ export function parseSearchParams(
 }
 
 // ---------------------------------------------------------------------------
-// Seasons and the price estimate.
-//
-// The season start dates carry a year, but seasons recur, so only the month
-// and day are used: a night is WINTER from the winter start up to the summer
-// start, and SUMMER from the summer start up to the next winter start. A lodge
-// missing either date has no season, so no estimate.
+// Seasons and the price estimate. Which season a night is in lives in
+// `@/lib/lodge-seasons` (start and end dates, recurring every year); a night
+// in neither season has no rate, so the stay has no estimate.
 // ---------------------------------------------------------------------------
 
-export type Season = "winter" | "summer";
-
-function monthDay(date: string): string {
-  return date.slice(5);
-}
-
-export function seasonForNight(
-  night: string,
-  winterStart: string | null,
-  summerStart: string | null,
-): Season | null {
-  if (!winterStart || !summerStart) return null;
-  const n = monthDay(night);
-  const w = monthDay(winterStart);
-  const s = monthDay(summerStart);
-  if (w === s) return null;
-  if (w < s) return n >= w && n < s ? "winter" : "summer";
-  return n >= s && n < w ? "summer" : "winter";
-}
+export { seasonForNight, type Season } from "@/lib/lodge-seasons";
 
 export interface StayEstimate {
   nights: number;
   /** Dollars for the whole party and stay, incl. GST; null when unknown. */
   total: number | null;
+  /** Why there is no total: a night outside the lodge's seasons, or a missing rate or season. */
+  missing?: "out-of-season" | "incomplete";
 }
 
 /**
@@ -342,13 +328,15 @@ export function estimateStay(lodge: PublicLodge, query: SearchQuery): StayEstima
   const nights = eachNight(query.checkIn, query.checkOut);
   let cents = 0;
   for (const night of nights) {
-    const season = seasonForNight(night, lodge.winterSeasonStart, lodge.summerSeasonStart);
-    if (!season) return { nights: nights.length, total: null };
+    const season = seasonForNight(night, lodge);
+    if (!season) {
+      return { nights: nights.length, total: null, missing: hasSeasons(lodge) ? "out-of-season" : "incomplete" };
+    }
     for (const g of AGE_GROUPS) {
       const count = query.guests[g.key];
       if (count === 0) continue;
       const rate = lodge.rates[g[season]];
-      if (rate === null) return { nights: nights.length, total: null };
+      if (rate === null) return { nights: nights.length, total: null, missing: "incomplete" };
       cents += Math.round(rate * 100) * count;
     }
   }

@@ -107,9 +107,13 @@ Phase E (release) not started.
 
 ### Season pricing rule
 
-A night uses the **winter** rates from `winterSeasonStart` until
-`summerSeasonStart`, and **summer** rates from `summerSeasonStart` until the
-next winter start. A stay that crosses a boundary is priced night by night. If
+A night uses the **winter** rates from `winterSeasonStart` to
+`winterSeasonEnd` (its last day), and the **summer** rates from
+`summerSeasonStart` to `summerSeasonEnd` (end dates added 16 Oct 2026, API
+2.6). Seasons recur: only day and month count. A season with no end runs up to
+the other season's start; a night in neither season has no rate, so the stay
+shows "Price not available for these dates". The rules live in
+`src/lib/lodge-seasons.ts`. A stay that crosses a boundary is priced night by night. If
 a lodge has no season dates, or the needed rate is empty, the expanded row shows
 both rate sets and no estimated total.
 

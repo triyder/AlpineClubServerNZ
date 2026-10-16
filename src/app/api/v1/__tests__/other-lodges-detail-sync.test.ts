@@ -92,7 +92,9 @@ const dbRow = (over: Record<string, unknown> = {}) => ({
   dinnerIncluded: false,
   cancellationPeriod: null,
   winterSeasonStart: null,
+  winterSeasonEnd: null,
   summerSeasonStart: null,
+  summerSeasonEnd: null,
   amenities: [] as Array<{ name: string; description: string | null }>,
   sourceClubId: "club_1",
   sourceClub: null,
@@ -700,3 +702,53 @@ describe("POST /api/v1/other-lodges (upload) keyed by the lodge's id renames it 
     expect(update.mock.calls[0][0].data.name).toBeUndefined();
   });
 });
+
+describe("POST /api/v1/other-lodges (upload): season end dates (API 2.6)", () => {
+  it("stores the end dates the item carries", async () => {
+    findUnique.mockResolvedValue(dbRow());
+    const res = await POST(
+      req("POST", {
+        lodges: [{ id: "l1", name: "Whakapapa Lodge", winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-09-30" }],
+      }),
+    );
+    expect((await res.json()).updated).toBe(1);
+    expect(update.mock.calls[0][0].data.winterSeasonEnd.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+  });
+
+  it("skips a lodge whose seasons would overlap (its dates over the stored ones), and goes on", async () => {
+    findUnique.mockImplementation(async (args: { where: { id?: string } }) =>
+      args.where.id === "l1"
+        ? dbRow({ summerSeasonStart: new Date("2026-12-01T00:00:00.000Z") })
+        : dbRow({ id: "l2", name: "Tasman Lodge" }),
+    );
+    const res = await POST(
+      req("POST", {
+        lodges: [
+          { id: "l1", name: "Whakapapa Lodge", winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-12-20" },
+          { id: "l2", name: "Tasman Lodge", bedCapacity: 30 },
+        ],
+      }),
+    );
+    const body = await res.json();
+    expect(body.results[0]).toEqual({ id: "l1", name: "Whakapapa Lodge", status: "skipped", reason: "seasons" });
+    expect(body.results[1]).toMatchObject({ id: "l2", status: "updated" });
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST /api/v1/other-lodges (upload): the seasons check comes after unknown-id and ownership", () => {
+  const overlapping = { winterSeasonStart: "2026-06-01", winterSeasonEnd: "2026-12-20", summerSeasonStart: "2026-12-01" };
+
+  it("answers unknown-id, with the id, for an id the server never issued", async () => {
+    findUnique.mockResolvedValue(null);
+    const body = await (await POST(req("POST", { lodges: [{ id: "gone", name: "Whakapapa Lodge", ...overlapping }] }))).json();
+    expect(body.results[0]).toMatchObject({ id: "gone", status: "skipped", reason: "unknown-id" });
+  });
+
+  it("answers owned-by-other-club, not seasons, for another club's lodge", async () => {
+    findUnique.mockResolvedValue(dbRow({ sourceClubId: "club_other" }));
+    const body = await (await POST(req("POST", { lodges: [{ id: "l1", name: "Whakapapa Lodge", ...overlapping }] }))).json();
+    expect(body.results[0]).toMatchObject({ id: "l1", status: "skipped", reason: "owned-by-other-club" });
+  });
+});
+

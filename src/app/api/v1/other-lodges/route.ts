@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { seasonDatesProblem } from "@/lib/lodge-seasons";
 import { enforceClientApiVersion } from "@/lib/api-version-gate";
 import { authenticateApiRequest, clientIp, hasScope } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -16,6 +17,7 @@ import {
   otherLodgeOrderBy,
   otherLodgePullCursor,
   otherLodgeSelect,
+  seasonDatesAfter,
   otherLodgeUploadSchema,
   serializeOtherLodgeForClient,
   type LodgeDetailColumns,
@@ -314,6 +316,16 @@ export async function POST(req: Request) {
         // the lodge exists, and creating it under a new id would fork it.
         skipped++;
         results.push({ id: item.id, name, status: "skipped", reason: "unknown-id" });
+        continue;
+      }
+      // The seasons as this item would leave them (its dates over the stored
+      // row's): for a lodge this club may write, two that share a day are
+      // refused for this lodge, `seasons`. After the unknown-id answer, and
+      // before the ownership ones are reached below, only for a create or the
+      // club's own lodge.
+      if ((!existing || existing.sourceClubId === club.id) && seasonDatesProblem(seasonDatesAfter(existing, item))) {
+        skipped++;
+        results.push({ ...(existing ? { id: existing.id } : item.id ? { id: item.id } : {}), name, status: "skipped", reason: "seasons" });
         continue;
       }
       if (!existing) {

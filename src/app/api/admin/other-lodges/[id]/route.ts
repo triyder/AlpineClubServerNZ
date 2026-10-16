@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { seasonDatesProblem } from "@/lib/lodge-seasons";
 import { guardAdminWrite } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
@@ -10,6 +11,7 @@ import {
   lodgeDetailColumns,
   normalizeOtherLodgeText,
   otherLodgeSelect,
+  seasonDatesAfter,
   otherLodgeUpdateSchema,
   liveOtherLodgeWhere,
   serializeOtherLodge,
@@ -66,6 +68,13 @@ export async function PATCH(
       { error: "This lodge has been deleted and can no longer be changed." },
       { status: 409 },
     );
+  }
+
+  // The seasons as the save would leave them (this request's dates over the
+  // stored ones): no overlap (`@/lib/lodge-seasons`).
+  const seasonProblem = seasonDatesProblem(seasonDatesAfter(existing, parsed.data));
+  if (seasonProblem) {
+    return NextResponse.json({ error: seasonProblem }, { status: 400 });
   }
 
   // Only assign the fields that were actually provided so a partial PATCH (e.g.
