@@ -54,7 +54,7 @@ const SEASON_DATE_FIELDS = [
 
 // The rate grid: a row per season, a column per guideline age group. Typed
 // over the field list, so a rate field missing from the grid is a type error.
-const RATE_AGE_GROUPS = ["Under 5", "5–12", "13–17", "18+"] as const;
+const RATE_AGE_GROUPS = ["Infant", "Child", "Youth", "Adult"] as const;
 const RATE_GRID: ReadonlyArray<{
   season: string;
   fields: readonly [LodgeRateField, LodgeRateField, LodgeRateField, LodgeRateField];

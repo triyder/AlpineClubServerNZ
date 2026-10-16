@@ -18,7 +18,7 @@ Phase E (release) not started.
 | Topic | Decision |
 | ----- | -------- |
 | Where the page lives | A public `/book` page on this server. **Book now** redirects to the lodge's own site (`siteUrl`, the "Non-member booking page URL"). |
-| Age groups | Under 5, 5–12, 13–17, 18+ (changed from 5–11 and 12–17 on 16 Oct 2026; the field names keep the old numbers). **Guideline groups only**: the guest's real ages are entered on the lodge's own site when the booking is made, so there is no mapping to each club's `AgeTierSetting`. |
+| Age groups | Infant, Child, Youth, Adult (16 Oct 2026; each club's own age tiers, whatever ages it uses; earlier Under 5 / 5–11 / 12–17 / 18+). The field names keep the old numbers. **Guideline groups only**: the guest's real ages are entered on the lodge's own site when the booking is made, so there is no mapping to each club's `AgeTierSetting`. |
 | Rates | **8 fields**: a winter set and a summer set, each with the four age groups. Stored as **dollars and cents** (`DECIMAL(8,2)`); display only, nothing is charged here. Shown **incl. GST**. |
 | Who edits rates | An administrator can update every lodge on `/lodges`. A club can also upload rates for the lodges **it owns** through the existing lodge upload. Rates are included in the club pull. |
 | Availability source | **Retrieved live from the club's booking app at search time.** The server **never stores** availability — no table, no cache. If the call answers, the number is shown; otherwise the unknown message. |
@@ -60,8 +60,8 @@ Phase E (release) not started.
 6. **Public route `/book`**, no sign-in. Add it to `PUBLIC_PAGES` in
    `src/lib/__tests__/proxy-coverage.test.ts` deliberately; link it from the
    home page.
-7. **Search bar** — check-in, check-out, and four guest counters (Under 5 /
-   5–12 / 13–17 / 18+), and **Search**. Validation: check-out after check-in, at
+7. **Search bar** — check-in, check-out, and four guest counters (Infant /
+   Child / Youth / Adult), and **Search**. Validation: check-out after check-in, at
    least one guest, stay capped (e.g. 30 nights), dates not in the past. The
    search lives in the URL query so results can be bookmarked and shared.
 8. **Search service** `src/lib/lodge-search.ts` — server-side query over
