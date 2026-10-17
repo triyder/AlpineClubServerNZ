@@ -55,15 +55,6 @@ function stayText(r: PlannerResult): string {
   return r.estimate.total !== null ? formatNzd(r.estimate.total) : "No price";
 }
 
-/** The lodge the guest chose, else the first with room, else the first. */
-function chosen(results: PlannerResult[], wanted: string | undefined): PlannerResult | undefined {
-  return (
-    results.find((r) => r.lodge.id === wanted) ??
-    results.find((r) => r.availableBeds !== null) ??
-    results[0]
-  );
-}
-
 function Planner({
   query,
   params,
@@ -77,7 +68,9 @@ function Planner({
 }) {
   const guests = totalGuests(query.guests);
   const wanted = typeof params.lodge === "string" ? params.lodge : undefined;
-  const pick = chosen(results, wanted);
+  // Open only the lodge the address names (a home-page link, or a choice made
+  // without JavaScript); otherwise every lodge starts closed.
+  const pick = results.find((r) => r.lodge.id === wanted);
   const rows: PlannerRow[] = results.map((r) => ({
     id: r.lodge.id,
     name: r.lodge.name,
@@ -92,11 +85,11 @@ function Planner({
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">
         {results.length} {results.length === 1 ? "lodge" : "lodges"} for {guests}{" "}
-        {guests === 1 ? "guest" : "guests"}, {nightsInWords(stay)}. Choose a lodge to see its price night by night.
+        {guests === 1 ? "guest" : "guests"}, {nightsInWords(stay)}. Choose a lodge to open its details and its price night by night.
       </p>
-      {wanted !== undefined && pick?.lodge.id !== wanted ? (
+      {wanted !== undefined && !pick ? (
         <p role="status" className="rounded-xl border border-border p-3 text-sm">
-          The lodge you chose does not match this search, so another is shown.
+          The lodge you chose does not match this search.
         </p>
       ) : null}
       <PlannerView

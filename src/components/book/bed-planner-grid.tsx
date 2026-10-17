@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { Fragment, type MouseEvent, type ReactNode, type Ref } from "react";
 import { cn } from "@/lib/utils";
 import { freeBedsWords, nightLabel, nightLevel, type NightLevel } from "@/lib/bed-planner";
 
@@ -12,6 +12,11 @@ import { freeBedsWords, nightLabel, nightLevel, type NightLevel } from "@/lib/be
  * cell's meaning is also in its text for screen readers, and the legend shows
  * every kind. Every border is the level's full colour, so the cell stands out
  * from the card (1.4.11).
+ *
+ * The open lodge's panel (`expanded`) is a full-width row directly under its
+ * lodge, held to the visible width of the table's scroll box (`panelWidth`)
+ * and pinned to its left edge, so on a phone it never scrolls sideways with
+ * the nights.
  */
 
 export const LEVEL_STYLES: Record<NightLevel, string> = {
@@ -117,19 +122,31 @@ export function BedPlannerGrid({
   chosenId,
   caption,
   onChoose,
+  expanded,
+  panelWidth,
+  scrollRef,
+  panelRef,
 }: {
   nights: string[];
   stayNights: ReadonlySet<string>;
   rows: PlannerRow[];
   guests: number;
+  /** The open lodge, if any. */
   chosenId: string | null;
   caption: string;
-  /** Choose a lodge in place; without it (or without JavaScript) the link navigates. */
+  /** Open or close a lodge in place; without it (or without JavaScript) the link navigates. */
   onChoose?: (row: PlannerRow, event: MouseEvent<HTMLAnchorElement>) => void;
+  /** The open lodge's panel, shown in a row under it. */
+  expanded?: ReactNode;
+  /** The scroll box's visible width in px, so the panel fits it; unset before it is measured. */
+  panelWidth?: number;
+  scrollRef?: Ref<HTMLDivElement>;
+  panelRef?: Ref<HTMLDivElement>;
 }) {
+  const columns = nights.length + 2;
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} className="overflow-x-auto">
         <table className="w-full min-w-[44rem] border-collapse text-sm">
           <caption className="border-b border-border bg-muted/40 px-4 py-3 text-left text-base font-bold">
             {caption}
@@ -165,8 +182,10 @@ export function BedPlannerGrid({
           <tbody>
             {rows.map((row) => {
               const chosen = row.id === chosenId;
+              const panelId = `lodge-panel-${row.id}`;
               return (
-                <tr key={row.id} className="border-t border-border">
+                <Fragment key={row.id}>
+                <tr className="border-t border-border">
                   <th
                     scope="row"
                     className={cn(
@@ -177,12 +196,14 @@ export function BedPlannerGrid({
                     <a
                       href={row.href}
                       onClick={onChoose ? (event) => onChoose(row, event) : undefined}
-                      aria-current={chosen ? "true" : undefined}
+                      aria-expanded={chosen}
+                      aria-controls={chosen ? panelId : undefined}
+                      data-lodge-link
                       className="underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {row.name}
                     </a>
-                    {chosen ? <span className="ml-2 rounded bg-primary px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-primary-foreground">Chosen</span> : null}
+                    {chosen ? <span className="ml-2 rounded bg-primary px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-primary-foreground">Open</span> : null}
                     {row.location ? (
                       <span className="block text-xs font-normal text-muted-foreground">{row.location}</span>
                     ) : null}
@@ -203,6 +224,22 @@ export function BedPlannerGrid({
                     ) : null}
                   </td>
                 </tr>
+                {chosen && expanded ? (
+                  <tr id="chosen-lodge" className="scroll-mt-4">
+                    <td colSpan={columns} className="p-0">
+                      <div
+                        ref={panelRef}
+                        id={panelId}
+                        tabIndex={-1}
+                        style={panelWidth ? { width: panelWidth } : undefined}
+                        className="sticky left-0 p-3 focus-visible:outline-none"
+                      >
+                        {expanded}
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>
