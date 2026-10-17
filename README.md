@@ -60,10 +60,14 @@ Two operational notes:
 
 ### Free beds on the public lodge search
 
-`/book` shows a lodge's free beds for the searched stay by asking that lodge's
+The bed planner (`/book`, and the home page's weekend grid) shows a lodge's
+free beds night by night by asking that lodge's
 **club booking site** at search time, and forgets the answer; nothing is
-stored or cached. For each lodge that already fits the party and the ticked
-facilities, and whose owning club is approved with a push target registered,
+stored or cached. On `/book` it asks about each lodge that already fits the
+party and the ticked facilities; the home page's weekend grid
+(`GET /book/nights`) asks about every public lodge, and requests for the same
+nights that arrive together share one round. Only lodges whose owning club is
+approved with a push target registered are asked;
 the server calls `GET /api/webhooks/servernz-availability?lodgeId&from&to` at
 the ORIGIN of the club's push URL (AlpineClubBookingsNZ, issue #62), signed
 like a push: `X-Acs-Timestamp` and `X-Acs-Signature`, an HMAC with the club's
@@ -71,10 +75,17 @@ derived push secret over `${timestamp}.availability
 <lodgeId>
 <from>
 <to>`.
-The club answers one number, the fewest free beds on any night of the stay;
+The club answers the free beds on each night asked about (`nights`,
+AlpineClubBookingsNZ #79) and the fewest of them (`freeBeds`). The planner asks
+once per lodge for its whole window of nights; a club on an older booking app
+sends no `nights`, so it is asked again for the stay alone and its nights show
+"–" ("not known night by night") beside the stay's free beds. A `nights` list that is not one whole number per night asked, in order,
+is ignored;
 six clubs are asked at a time, each gets three seconds, and anything else
 (no registration, a refused address, a timeout, an error, an answer about a
-different lodge or stay) shows **beds available unknown**. A lodge links to
+different lodge or stay) shows **?** ("Club not answering") in that lodge's
+cells. A second question for an older booking app can add up to one more
+round of the three-second wait. A lodge links to
 the club's own lodge by its permanent id (`ownLodges` in the 2.2 pull).
 
 Two settings decide whether it works at all:
@@ -275,7 +286,7 @@ Tokens are shown in plaintext **exactly once**, at generation time.
 | ------------ | ------------- | -------------------------------------------------------------- |
 | `/login`     | public        | Email + password sign-in.                                      |
 | `/register`  | public        | Lodge submits a link request.                                  |
-| `/book`      | public        | **Find a lodge** — guests search the registry by dates, guests (Infant / Child / Youth / Adult) and facilities, expand a lodge for its amenities, non-member rates (with each season's dates) and an estimated total priced night by night at each night's season (a stay with a night outside both seasons shows "Price not available for these dates"), and press **Book now** to go to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). This server never makes a booking. Shows only public lodge fields; rate-limited per IP. Free beds are asked live of each lodge's club booking site and never stored (see *Free beds on the public lodge search*). |
+| `/book`      | public        | **Bed planner** (#25) — guests search by arrive and leave dates, guests (Infant / Child / Youth / Adult) and "must have" facilities, and see a grid of the matching lodges by night (at least seven nights around the stay, the stay highlighted), each cell the free beds that night, coloured by whether the party fits, and the price of the stay. Choosing a lodge expands it in place, in a row under it (pressing outside it, Escape or the name again closes it), with its facts, the stay priced night by night at each night's season, all its rates, and **Book with the club**, which goes to the lodge's own booking site (`/book/go/:id`, a redirect looked up at the moment of the click). The home page's weekend grid loads from `GET /book/nights?from&to` (a week at most, rate-limited per IP) in the browser, so crawlers never make the server ask the clubs. This server never makes a booking. Shows only public lodge fields; rate-limited per IP. Free beds are asked live of each lodge's club booking site and never stored (see *Free beds on the public lodge search*). |
 | `/dashboard` | session       | Connected-club stats and recent client activity.              |
 | `/clubs`     | session       | Approve/reject applications, issue & revoke API keys, and **choose the lodges each approved club owns** (multi-select; admin/manager), and see the **API version each club last reported** — up to date, behind (its site must be upgraded), newer than this server, or not reported — with when it last checked. |
 | `/lodges`    | session       | Central **"Other lodges"** registry — add/edit/delete, and see which club last updated each entry. |

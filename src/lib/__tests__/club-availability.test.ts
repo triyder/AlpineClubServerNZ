@@ -55,7 +55,7 @@ afterEach(() => {
 
 describe("askClubForFreeBeds", () => {
   it("asks the booking app's route at the push URL's origin, signed as the booking app verifies", async () => {
-    expect(await askClubForFreeBeds(TARGET, STAY)).toBe(7);
+    expect(await askClubForFreeBeds(TARGET, STAY)).toEqual({ freeBeds: 7, nights: null });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe(
@@ -105,14 +105,48 @@ describe("askClubForFreeBeds", () => {
   });
 });
 
+describe("askClubForFreeBeds night by night (#25, triyder/AlpineClubBookingsNZ#79)", () => {
+  const NIGHTS = [
+    { date: "2026-07-10", freeBeds: 9 },
+    { date: "2026-07-11", freeBeds: 7 },
+    { date: "2026-07-12", freeBeds: 12 },
+  ];
+  const withNights = (nights: unknown) => answer(200, { lodgeId: "ol_a", ...STAY, freeBeds: 7, nights });
+
+  it("reads one whole number per night asked, in order", async () => {
+    withNights(NIGHTS);
+    const result = await askClubForFreeBeds(TARGET, STAY);
+    expect(result?.freeBeds).toBe(7);
+    expect([...(result?.nights ?? [])]).toEqual([
+      ["2026-07-10", 9],
+      ["2026-07-11", 7],
+      ["2026-07-12", 12],
+    ]);
+  });
+
+  it.each([
+    ["out of order", [NIGHTS[1], NIGHTS[0], NIGHTS[2]]],
+    ["a night short", NIGHTS.slice(0, 2)],
+    ["a night too many", [...NIGHTS, { date: "2026-07-13", freeBeds: 1 }]],
+    ["for other dates", NIGHTS.map((n, i) => ({ ...n, date: `2026-08-1${i}` }))],
+    ["a negative count", [NIGHTS[0], { ...NIGHTS[1], freeBeds: -1 }, NIGHTS[2]]],
+    ["a fractional count", [NIGHTS[0], { ...NIGHTS[1], freeBeds: 1.5 }, NIGHTS[2]]],
+    ["not a list", { "2026-07-10": 9 }],
+  ])("ignores a night-by-night list %s, keeping the stay's number", async (_label, nights) => {
+    withNights(nights);
+    expect(await askClubForFreeBeds(TARGET, STAY)).toEqual({ freeBeds: 7, nights: null });
+  });
+});
+
 describe("fetchFreeBeds", () => {
   it("returns the answers by lodge id and leaves out the lodges whose club did not answer", async () => {
     const targets = ["a", "b", "c"].map((id) => ({ ...TARGET, lodgeId: id }));
-    const ask = vi.fn(async (t: AvailabilityTarget) => (t.lodgeId === "b" ? null : 3));
+    const three = { freeBeds: 3, nights: null };
+    const ask = vi.fn(async (t: AvailabilityTarget) => (t.lodgeId === "b" ? null : three));
     const result = await fetchFreeBeds(targets, STAY, ask);
     expect([...result.entries()].sort()).toEqual([
-      ["a", 3],
-      ["c", 3],
+      ["a", three],
+      ["c", three],
     ]);
   });
 
@@ -124,7 +158,7 @@ describe("fetchFreeBeds", () => {
       peak = Math.max(peak, inFlight);
       await new Promise((r) => setTimeout(r, 5));
       inFlight--;
-      return 1;
+      return { freeBeds: 1, nights: null };
     });
     const targets = Array.from({ length: 20 }, (_, i) => ({ ...TARGET, lodgeId: `l${i}` }));
     const result = await fetchFreeBeds(targets, STAY, ask);

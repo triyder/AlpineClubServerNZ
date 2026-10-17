@@ -30,9 +30,14 @@ export function extractBearerToken(req: Request): string | null {
 
 /** Best-effort client IP from proxy headers (Caddy sets X-Forwarded-For). */
 export function clientIp(req: Request): string | null {
-  const fwd = req.headers.get("x-forwarded-for");
+  return clientIpFromHeaders(req.headers);
+}
+
+/** `clientIp` for a page, which has the request's headers but no `Request`. */
+export function clientIpFromHeaders(headers: Pick<Headers, "get">): string | null {
+  const fwd = headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip");
+  return headers.get("x-real-ip");
 }
 
 /**

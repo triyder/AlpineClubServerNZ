@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { eachNight } from "@/lib/lodge-search";
 import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 import { logger } from "@/lib/logger";
 import { derivePushSecret, signPushBody } from "@/lib/push-delivery";
@@ -19,6 +20,13 @@ import { assertPublicDestination } from "@/lib/push-targets";
  * WHERE TO ASK. A club's booking site is reached at the ORIGIN of the push URL
  * it registered (`Club.pushUrl`), so a club that never registered — the
  * Communication Portal is off, or its site is not on https — is never asked.
+ *
+ * NIGHT BY NIGHT (#25, triyder/AlpineClubBookingsNZ#79). A club's answer may
+ * carry `nights`, the free beds on each night asked about, for the bed
+ * planner. It is optional: an older booking app sends only `freeBeds`, the
+ * fewest of them, and the planner shows "?" for that lodge's nights. A
+ * `nights` list that is not exactly one whole number per night asked, in
+ * order, is ignored, never trusted in part.
  *
  * HOW IT IS SIGNED. With the same per-club secret the shared-post pushes use
  * (`derivePushSecret`), over `${timestamp}.availability\n<lodgeId>\n<from>\n<to>`
@@ -86,18 +94,39 @@ export async function loadAvailabilityTargets(
   );
 }
 
+const bedCount = z.number().int().min(0).max(100_000);
 const answerSchema = z.object({
   lodgeId: z.string(),
   from: z.string(),
   to: z.string(),
-  freeBeds: z.number().int().min(0).max(100_000),
+  freeBeds: bedCount,
+  nights: z.unknown().optional(),
 });
+// No longer than any question asks (the booking app caps a stay at 30 nights).
+const nightsSchema = z.array(z.object({ date: z.string(), freeBeds: bedCount })).max(30);
 
-/** Ask one club about one lodge; the free beds, or null for "unknown". */
+/** What a club told us about one lodge and range. */
+export interface ClubAvailability {
+  /** The fewest free beds on any night asked about. */
+  freeBeds: number;
+  /** Free beds by night (`YYYY-MM-DD`), or null when the club did not say. */
+  nights: ReadonlyMap<string, number> | null;
+}
+
+/** The nights of an answer, when they are exactly the nights asked, in order. */
+function nightsOf(raw: unknown, range: { from: string; to: string }): Map<string, number> | null {
+  const parsed = nightsSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const asked = eachNight(range.from, range.to);
+  if (parsed.data.length !== asked.length || parsed.data.some((n, i) => n.date !== asked[i])) return null;
+  return new Map(parsed.data.map((n) => [n.date, n.freeBeds]));
+}
+
+/** Ask one club about one lodge; what it said, or null for "unknown". */
 export async function askClubForFreeBeds(
   target: AvailabilityTarget,
   stay: { from: string; to: string },
-): Promise<number | null> {
+): Promise<ClubAvailability | null> {
   try {
     const url = new URL(CLUB_AVAILABILITY_PATH, new URL(target.pushUrl).origin);
     url.searchParams.set("lodgeId", target.lodgeId);
@@ -137,7 +166,7 @@ export async function askClubForFreeBeds(
     ) {
       return null;
     }
-    return parsed.data.freeBeds;
+    return { freeBeds: parsed.data.freeBeds, nights: nightsOf(parsed.data.nights, stay) };
   } catch (error) {
     // Expected often (a club offline, unregistered, behind a refused address):
     // logged at debug, never with the URL's query or a secret.
@@ -150,15 +179,15 @@ export async function askClubForFreeBeds(
 }
 
 /**
- * Ask every target, a few at a time, and return the free beds by central
- * lodge id. A lodge whose club did not answer is simply absent.
+ * Ask every target, a few at a time, and return what each club said by
+ * central lodge id. A lodge whose club did not answer is simply absent.
  */
 export async function fetchFreeBeds(
   targets: ReadonlyArray<AvailabilityTarget>,
   stay: { from: string; to: string },
   ask: typeof askClubForFreeBeds = askClubForFreeBeds,
-): Promise<Map<string, number>> {
-  const result = new Map<string, number>();
+): Promise<Map<string, ClubAvailability>> {
+  const result = new Map<string, ClubAvailability>();
   let next = 0;
   async function worker() {
     while (next < targets.length) {
