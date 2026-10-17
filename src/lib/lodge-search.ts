@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { imageRefSelect, toImageRef } from "@/lib/image-library";
-import { hasSeasons, seasonForNight } from "@/lib/lodge-seasons";
+import { hasSeasons, seasonForNight, type Season } from "@/lib/lodge-seasons";
 import {
   formatLodgeDate,
   LODGE_BOOLEAN_FIELDS,
@@ -26,7 +26,7 @@ import {
 // The public shape. PRIVACY BY CONSTRUCTION: the select names only what a guest
 // may see, so a booking officer's name, email or phone, the owning or
 // last-updating club, and every audit field are never even read. The booking
-// URL is not sent either: "Book now" goes through the redirect route, which
+// URL is not sent either: "Book with the club" goes through the redirect route, which
 // looks it up at the moment of the click.
 // ---------------------------------------------------------------------------
 
@@ -126,13 +126,14 @@ export function toPublicLodge(record: PublicLodgeRecord): PublicLodge {
 // ---------------------------------------------------------------------------
 
 export const AGE_GROUPS = [
-  { key: "under5", label: "Infant", winter: "winterRateUnder5", summer: "summerRateUnder5" },
-  { key: "age5to11", label: "Child", winter: "winterRate5To11", summer: "summerRate5To11" },
-  { key: "age12to17", label: "Youth", winter: "winterRate12To17", summer: "summerRate12To17" },
-  { key: "adults", label: "Adult", winter: "winterRateAdult", summer: "summerRateAdult" },
+  { key: "under5", label: "Infant", plural: "infants", winter: "winterRateUnder5", summer: "summerRateUnder5" },
+  { key: "age5to11", label: "Child", plural: "children", winter: "winterRate5To11", summer: "summerRate5To11" },
+  { key: "age12to17", label: "Youth", plural: "youth", winter: "winterRate12To17", summer: "summerRate12To17" },
+  { key: "adults", label: "Adult", plural: "adults", winter: "winterRateAdult", summer: "summerRateAdult" },
 ] as const satisfies ReadonlyArray<{
   key: string;
   label: string;
+  plural: string;
   winter: LodgeRateField;
   summer: LodgeRateField;
 }>;
@@ -165,7 +166,7 @@ export function todayInNz(now: Date = new Date()): string {
   }).format(now);
 }
 
-function isCalendarDate(value: string): boolean {
+export function isCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [y, m, d] = value.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -181,6 +182,13 @@ function dayNumber(date: string): number {
 }
 
 /** Whole nights from check-in to check-out. */
+/** `YYYY-MM-DD` plus `days`, in UTC (calendar arithmetic only). */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function nightsBetween(checkIn: string, checkOut: string): number {
   return dayNumber(checkOut) - dayNumber(checkIn);
 }
@@ -266,16 +274,16 @@ export function parseSearchParams(
   const { checkIn, checkOut } = form;
   const datesValid = isCalendarDate(checkIn) && isCalendarDate(checkOut);
   if (!datesValid) {
-    errors.push("Choose a check-in and a check-out date.");
+    errors.push("Choose the day you arrive and the day you leave.");
   } else {
     const nights = nightsBetween(checkIn, checkOut);
-    if (checkIn < today) errors.push("Check-in cannot be in the past.");
-    if (nights < 1) errors.push("Check-out must be after check-in.");
+    if (checkIn < today) errors.push("You cannot arrive in the past.");
+    if (nights < 1) errors.push("You must leave after the day you arrive.");
     if (nights > STAY_NIGHTS_MAX) {
       errors.push(`A stay can be at most ${STAY_NIGHTS_MAX} nights.`);
     }
     if (dayNumber(checkIn) - dayNumber(today) > CHECK_IN_DAYS_AHEAD_MAX) {
-      errors.push("Check-in is too far ahead.");
+      errors.push("That arrival is too far ahead.");
     }
   }
 
@@ -319,28 +327,48 @@ export interface StayEstimate {
   missing?: "out-of-season" | "incomplete";
 }
 
+export interface NightPrice {
+  night: string;
+  season: Season | null;
+  /** Each age group with guests: how many, at what nightly rate (dollars, or null when unset). */
+  parts: Array<{ label: string; plural: string; count: number; rate: number | null }>;
+  /** Whole cents for the party that night, or null when the night has no season or a rate is unset. */
+  cents: number | null;
+}
+
 /**
- * The whole stay priced night by night at each night's season rates. Unknown
- * (null) when the lodge has no seasons, or a rate is missing for an age group
- * that has guests. Summed in whole cents, so no float error accumulates.
+ * The stay priced night by night at each night's season rates: THE one
+ * pricing of a stay, which the total (`estimateStay`) and the bed planner's
+ * night-by-night rows both read, so the rows always add up to the total.
+ * In whole cents, so no float error accumulates.
+ */
+export function priceNights(lodge: PublicLodge, query: SearchQuery): NightPrice[] {
+  return eachNight(query.checkIn, query.checkOut).map((night) => {
+    const season = seasonForNight(night, lodge);
+    const parts = AGE_GROUPS.filter((g) => query.guests[g.key] > 0).map((g) => ({
+      label: g.label,
+      plural: g.plural,
+      count: query.guests[g.key],
+      rate: season ? lodge.rates[g[season]] : null,
+    }));
+    const complete = season !== null && parts.every((p) => p.rate !== null);
+    const cents = complete ? parts.reduce((sum, p) => sum + Math.round(p.rate! * 100) * p.count, 0) : null;
+    return { night, season, parts, cents };
+  });
+}
+
+/**
+ * The whole stay's price: the sum of `priceNights`. Unknown (null) when a
+ * night is outside the lodge's seasons, the lodge has no seasons, or a rate
+ * is missing for an age group that has guests.
  */
 export function estimateStay(lodge: PublicLodge, query: SearchQuery): StayEstimate {
-  const nights = eachNight(query.checkIn, query.checkOut);
-  let cents = 0;
-  for (const night of nights) {
-    const season = seasonForNight(night, lodge);
-    if (!season) {
-      return { nights: nights.length, total: null, missing: hasSeasons(lodge) ? "out-of-season" : "incomplete" };
-    }
-    for (const g of AGE_GROUPS) {
-      const count = query.guests[g.key];
-      if (count === 0) continue;
-      const rate = lodge.rates[g[season]];
-      if (rate === null) return { nights: nights.length, total: null, missing: "incomplete" };
-      cents += Math.round(rate * 100) * count;
-    }
+  const nights = priceNights(lodge, query);
+  if (nights.some((n) => n.season === null)) {
+    return { nights: nights.length, total: null, missing: hasSeasons(lodge) ? "out-of-season" : "incomplete" };
   }
-  return { nights: nights.length, total: cents / 100 };
+  if (nights.some((n) => n.cents === null)) return { nights: nights.length, total: null, missing: "incomplete" };
+  return { nights: nights.length, total: nights.reduce((sum, n) => sum + n.cents!, 0) / 100 };
 }
 
 // ---------------------------------------------------------------------------

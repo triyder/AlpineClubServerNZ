@@ -84,11 +84,11 @@ describe("parseSearchParams", () => {
 
   it.each([
     ["a past check-in", { checkIn: "2026-10-11", checkOut: "2026-10-13" }, "past"],
-    ["check-out before check-in", { checkIn: "2026-11-05", checkOut: "2026-11-04" }, "after check-in"],
-    ["check-out equal to check-in", { checkIn: "2026-11-05", checkOut: "2026-11-05" }, "after check-in"],
+    ["check-out before check-in", { checkIn: "2026-11-05", checkOut: "2026-11-04" }, "leave after the day you arrive"],
+    ["check-out equal to check-in", { checkIn: "2026-11-05", checkOut: "2026-11-05" }, "leave after the day you arrive"],
     ["more than 30 nights", { checkIn: "2026-11-01", checkOut: "2026-12-02" }, "30 nights"],
-    ["an impossible date", { checkIn: "2026-02-30", checkOut: "2026-03-02" }, "check-in and a check-out"],
-    ["a missing check-out", { checkIn: "2026-11-01" }, "check-in and a check-out"],
+    ["an impossible date", { checkIn: "2026-02-30", checkOut: "2026-03-02" }, "the day you arrive and the day you leave"],
+    ["a missing check-out", { checkIn: "2026-11-01" }, "the day you arrive and the day you leave"],
     ["no guests", { checkIn: "2026-11-01", checkOut: "2026-11-02", adults: "0" }, "at least one guest"],
     ["a fractional guest count", { checkIn: "2026-11-01", checkOut: "2026-11-02", adults: "1.5" }, "whole numbers"],
     ["a negative guest count", { checkIn: "2026-11-01", checkOut: "2026-11-02", adults: "-1" }, "whole numbers"],
