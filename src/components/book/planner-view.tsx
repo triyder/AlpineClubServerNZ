@@ -38,6 +38,10 @@ export function PlannerView({
   caption,
   panels,
   initialId,
+  previousHref,
+  nextHref,
+  initialShowAll,
+  showAllHref,
 }: {
   nights: string[];
   stayNights: string[];
@@ -46,7 +50,12 @@ export function PlannerView({
   caption: string;
   panels: Array<{ id: string; panel: ReactNode }>;
   initialId: string | null;
+  previousHref: string | null;
+  nextHref: string | null;
+  initialShowAll: boolean;
+  showAllHref: string;
 }) {
+  const [showAll, setShowAll] = useState(initialShowAll);
   const [openId, setOpenId] = useState(initialId);
   const [opened, setOpened] = useState(false);
   const [panelWidth, setPanelWidth] = useState<number>();
@@ -85,7 +94,7 @@ export function PlannerView({
     function onClick(event: MouseEvent) {
       const target = event.target as Element | null;
       if (panelRef.current?.contains(target)) return;
-      if (target?.closest("[data-lodge-link]")) return;
+      if (target?.closest("[data-lodge-link], [data-lodge-row]")) return;
       close();
     }
     function onKeyDown(event: KeyboardEvent) {
@@ -114,8 +123,19 @@ export function PlannerView({
       panelWidth={panelWidth}
       scrollRef={scrollRef}
       panelRef={panelRef}
+      previousHref={previousHref}
+      nextHref={nextHref}
+      showAll={showAll}
+      showAllHref={showAllHref}
+      onShowAll={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        setShowAll(true);
+        window.history.replaceState(null, "", showAllHref.replace(/#.*$/, ""));
+      }}
       onChoose={(row, event) => {
-        // A modified click (new tab or window) keeps the link's own behaviour.
+        // A modified click (new tab or window) keeps the link's own behaviour;
+        // on the rest of the row it does nothing.
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         if (row.id === openId) {

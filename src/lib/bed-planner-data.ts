@@ -1,7 +1,7 @@
 import { fetchFreeBeds, loadAvailabilityTargets } from "@/lib/club-availability";
-import { lodgeNights, plannerWindow, type LodgeNights, type PlannerWindow } from "@/lib/bed-planner";
+import { lodgeNights, plannerView, type LodgeNights, type PlannerWindow } from "@/lib/bed-planner";
 import { searchLodges, toPublicLodge, type PublicLodge, type SearchQuery, type SearchResult } from "@/lib/lodge-search";
-import { loadPublicLodgeRecords } from "@/lib/public-lodges";
+import { loadLodgeIdsWithEmail, loadPublicLodgeRecords } from "@/lib/public-lodges";
 
 /**
  * What the bed planner shows (#25), asked of the clubs NOW and never stored
@@ -16,7 +16,11 @@ export interface PlannerResult extends SearchResult {
 }
 
 export interface Planner {
+  /** The nights the grid shows. */
   window: PlannerWindow;
+  /** The first night shown after ‹ or ›, or null where the grid cannot go. */
+  previous: string | null;
+  next: string | null;
   results: PlannerResult[];
 }
 
@@ -49,24 +53,38 @@ export async function askNights(
 }
 
 /**
- * The planner's order (owner, 18 Oct 2026): every lodge with a price for the
- * stay first ($0.00 is a price), then every lodge whose price is unknown, each
- * group A to Z by name (ties by id, so the order is stable).
+ * The planner's three groups (owner, 18 Oct 2026):
+ *  0. lodges a guest can reach (a booking page or an officer's email) with a
+ *     price for the stay ($0.00 is a price);
+ *  1. reachable lodges whose price is unknown;
+ *  2. lodges with neither a booking page nor an email, which the page hides
+ *     behind "Display all lodges".
  */
+export function plannerGroup(r: SearchResult): 0 | 1 | 2 {
+  if (!r.lodge.reachable) return 2;
+  return r.estimate.total !== null ? 0 : 1;
+}
+
+/** The planner's order: by group (`plannerGroup`), each A to Z by name (ties by id, so it is stable). */
 export function plannerOrder(a: SearchResult, b: SearchResult): number {
-  const priced = Number(b.estimate.total !== null) - Number(a.estimate.total !== null);
-  if (priced !== 0) return priced;
+  const group = plannerGroup(a) - plannerGroup(b);
+  if (group !== 0) return group;
   return a.lodge.name.localeCompare(b.lodge.name, "en-NZ", { sensitivity: "base" }) || a.lodge.id.localeCompare(b.lodge.id);
 }
 
 /** The planner for a valid search. */
-export async function loadPlanner(query: SearchQuery, today: string): Promise<Planner> {
-  const window = plannerWindow(query.checkIn, query.checkOut, today);
+export async function loadPlanner(query: SearchQuery, today: string, view?: string): Promise<Planner> {
+  const { window, ask, previous, next } = plannerView(query.checkIn, query.checkOut, today, view);
   // A deleted lodge (#16) is not offered to the public.
-  const lodges = (await loadPublicLodgeRecords()).map(toPublicLodge);
+  const records = (await loadPublicLodgeRecords()).map(toPublicLodge);
+  // A lodge with an officer's email is reachable too (third group: neither).
+  const withEmail = await loadLodgeIdsWithEmail(records.filter((l) => !l.reachable).map((l) => l.id));
+  const lodges = records.map((l) => (withEmail.has(l.id) ? { ...l, reachable: true } : l));
   // Only lodges that already fit the party and the ticked facilities are asked.
   const candidates = searchLodges(lodges, query).map((r) => r.lodge);
-  const nights = await askNights(candidates, window, query);
+  // The grid's nights and the stay's together (`ask`), so the stay's free
+  // beds are known wherever the grid has been moved to.
+  const nights = await askNights(candidates, { ...ask, nights: [] }, query);
   const known = new Map(
     [...nights].flatMap(([id, n]) => (n.stayFreeBeds === null ? [] : [[id, n.stayFreeBeds] as const])),
   );
@@ -76,5 +94,5 @@ export async function loadPlanner(query: SearchQuery, today: string): Promise<Pl
       availability: nights.get(r.lodge.id) ?? { nights: null, stayFreeBeds: null },
     }))
     .sort(plannerOrder);
-  return { window, results };
+  return { window, previous, next, results };
 }

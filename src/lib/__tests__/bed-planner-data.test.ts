@@ -10,13 +10,17 @@ const mocks = vi.hoisted(() => ({
   loadAvailabilityTargets: vi.fn(),
   fetchFreeBeds: vi.fn(),
   loadPublicLodgeRecords: vi.fn(),
+  loadLodgeIdsWithEmail: vi.fn(),
   todayInNz: vi.fn(),
 }));
 vi.mock("@/lib/club-availability", () => ({
   loadAvailabilityTargets: mocks.loadAvailabilityTargets,
   fetchFreeBeds: mocks.fetchFreeBeds,
 }));
-vi.mock("@/lib/public-lodges", () => ({ loadPublicLodgeRecords: mocks.loadPublicLodgeRecords }));
+vi.mock("@/lib/public-lodges", () => ({
+  loadPublicLodgeRecords: mocks.loadPublicLodgeRecords,
+  loadLodgeIdsWithEmail: mocks.loadLodgeIdsWithEmail,
+}));
 vi.mock("@/lib/lodge-search", async (original) => ({
   ...(await original<typeof import("@/lib/lodge-search")>()),
   todayInNz: mocks.todayInNz,
@@ -24,7 +28,7 @@ vi.mock("@/lib/lodge-search", async (original) => ({
   toPublicLodge: (record: unknown) => record,
 }));
 
-import { askNights, loadPlanner, plannerOrder } from "@/lib/bed-planner-data";
+import { askNights, loadPlanner, plannerGroup, plannerOrder } from "@/lib/bed-planner-data";
 import type { SearchResult } from "@/lib/lodge-search";
 import { plannerWindow } from "@/lib/bed-planner";
 import type { PublicLodge } from "@/lib/lodge-search";
@@ -40,6 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.loadAvailabilityTargets.mockImplementation(async (ids: string[]) => ids.map(target));
   mocks.todayInNz.mockReturnValue("2026-10-17");
+  mocks.loadLodgeIdsWithEmail.mockResolvedValue(new Set());
 });
 
 describe("askNights", () => {
@@ -105,8 +110,8 @@ describe("loadPlanner", () => {
 });
 
 describe("plannerOrder (owner, 18 Oct 2026)", () => {
-  const result = (name: string, total: number | null) =>
-    ({ lodge: { id: name.toLowerCase(), name }, estimate: { nights: 3, total } }) as unknown as SearchResult;
+  const result = (name: string, total: number | null, reachable = true) =>
+    ({ lodge: { id: name.toLowerCase(), name, reachable }, estimate: { nights: 3, total } }) as unknown as SearchResult;
 
   it("lists every lodge with a price A to Z, then every unknown price A to Z", () => {
     const sorted = [
@@ -124,6 +129,41 @@ describe("plannerOrder (owner, 18 Oct 2026)", () => {
       "arlberg", // A to Z ignores case
       "Craig's Hut",
       "Whakapapa Lodge",
+    ]);
+  });
+});
+
+describe("the third group: no booking page or email (owner, 18 Oct 2026)", () => {
+  const result = (name: string, total: number | null, reachable: boolean) =>
+    ({ lodge: { id: name.toLowerCase(), name, reachable }, estimate: { nights: 3, total } }) as unknown as SearchResult;
+
+  it("comes last, A to Z, whatever its price", () => {
+    const sorted = [
+      result("Zeta", null, false),
+      result("Beta", 100, false),
+      result("Kappa", null, true),
+      result("Alpha", 50, true),
+    ].sort(plannerOrder);
+    expect(sorted.map((r) => [r.lodge.name, plannerGroup(r)])).toEqual([
+      ["Alpha", 0],
+      ["Kappa", 1],
+      ["Beta", 2],
+      ["Zeta", 2],
+    ]);
+  });
+
+  it("counts a lodge with only an officer's email as reachable, asking for ids and never the address", async () => {
+    const bare = { id: "bare", name: "Bare", reachable: false, bedCapacity: 10, facilities: [], rates: {} };
+    const mailed = { ...bare, id: "mailed", name: "Mailed" };
+    mocks.loadPublicLodgeRecords.mockResolvedValue([bare, mailed]);
+    mocks.loadLodgeIdsWithEmail.mockResolvedValue(new Set(["mailed"]));
+    mocks.fetchFreeBeds.mockResolvedValue(new Map());
+    const query = { checkIn: "2026-12-18", checkOut: "2026-12-20", guests: { under5: 0, age5to11: 0, age12to17: 0, adults: 2 }, facilities: [] };
+    const { results } = await loadPlanner(query, "2026-10-17");
+    expect(mocks.loadLodgeIdsWithEmail).toHaveBeenCalledWith(["bare", "mailed"]);
+    expect(results.map((r) => [r.lodge.id, r.lodge.reachable])).toEqual([
+      ["mailed", true],
+      ["bare", false],
     ]);
   });
 });

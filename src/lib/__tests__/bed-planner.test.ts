@@ -8,6 +8,7 @@ import {
   nightLevel,
   nightsInWords,
   partySize,
+  plannerView,
   plannerWindow,
   weekendStays,
 } from "@/lib/bed-planner";
@@ -148,5 +149,40 @@ describe("words", () => {
     expect(nightsInWords(["2026-12-18", "2026-12-19"])).toBe("nights of Fri 18 Dec to Sat 19 Dec");
     expect(nightsInWords(["2026-10-17"])).toBe("night of Sat 17 Oct");
     expect(partySize({ under5: 0, age5to11: 0, age12to17: 0, adults: 0 })).toBe(1);
+  });
+});
+
+describe("plannerView: a week earlier or later (owner, 18 Oct 2026)", () => {
+  const stay = ["2026-12-18", "2026-12-21"] as const;
+  const today = "2026-10-18";
+
+  it("sits around the stay without a view, asking about the grid's nights", () => {
+    const v = plannerView(...stay, today);
+    expect([v.window.from, v.window.to]).toEqual(["2026-12-16", "2026-12-23"]);
+    expect(v.ask).toEqual({ from: "2026-12-16", to: "2026-12-23" });
+    expect([v.previous, v.next]).toEqual(["2026-12-09", "2026-12-23"]);
+  });
+
+  it("moves a week, keeps its length, and always asks about the stay as well", () => {
+    const later = plannerView(...stay, today, "2026-12-23");
+    expect([later.window.from, later.window.to, later.window.nights.length]).toEqual(["2026-12-23", "2026-12-30", 7]);
+    expect(later.ask).toEqual({ from: "2026-12-18", to: "2026-12-30" });
+    const earlier = plannerView(...stay, today, "2026-12-09");
+    expect(earlier.ask).toEqual({ from: "2026-12-09", to: "2026-12-21" });
+  });
+
+  it("stops where the grid and the stay together would pass thirty nights", () => {
+    const far = plannerView(...stay, today, "2027-01-06");
+    expect(far.window.from).toBe("2027-01-06");
+    expect(far.next).toBeNull(); // 13 Jan would need 18 Dec to 20 Jan: 33 nights
+    expect(plannerView(...stay, today, "2027-01-20").window.from).toBe("2026-12-16"); // too far: back to the stay
+  });
+
+  it("never goes before today: the last step back lands on today, then stops", () => {
+    const soon = plannerView("2026-10-22", "2026-10-24", today);
+    expect(soon.window.from).toBe("2026-10-20");
+    expect(soon.previous).toBe("2026-10-18");
+    expect(plannerView("2026-10-22", "2026-10-24", today, "2026-10-18").previous).toBeNull();
+    expect(plannerView("2026-10-22", "2026-10-24", today, "2026-10-01").window.from).toBe("2026-10-20");
   });
 });
