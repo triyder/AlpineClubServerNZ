@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
-import whakapapaPhoto from "../../../public/images/whakapapa-ski-field.jpg";
 import { clientIpFromHeaders } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -161,12 +160,13 @@ export default async function BookPage({
           credit, which the licence requires, is in the corner. */}
       <section className="relative isolate overflow-hidden">
         <Image
-          src={whakapapaPhoto}
+          // By path, not imported: a typecheck without Next's generated image
+          // declarations (CI runs it before any build) cannot resolve a .jpg import.
+          src="/images/whakapapa-ski-field.jpg"
           alt=""
           fill
           priority
           sizes="100vw"
-          placeholder="blur"
           className="-z-20 object-cover object-[center_35%] opacity-95"
         />
         <div aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-background/25 to-background" />
