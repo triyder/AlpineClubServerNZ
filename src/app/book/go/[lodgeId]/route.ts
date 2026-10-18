@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { isSafeHttpUrl, liveOtherLodgeWhere } from "@/lib/other-lodges";
 
 /**
- * GET /book/go/:lodgeId — "Book now". Sends the guest to the lodge's own
+ * GET /book/go/:lodgeId — "Book with the club". Sends the guest to the lodge's own
  * booking site (its non-member booking page URL); this server never makes a
  * booking.
  *

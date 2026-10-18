@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
+import { PublicHeader } from "@/components/book/public-header";
 import { registerAction, type RegisterState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,9 @@ export default function RegisterPage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+    <div className="flex min-h-screen flex-col bg-background">
+      <PublicHeader current="register" />
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Register a lodge</CardTitle>
@@ -92,5 +95,6 @@ export default function RegisterPage() {
         </CardContent>
       </Card>
     </main>
+    </div>
   );
 }

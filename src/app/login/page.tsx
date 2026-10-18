@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
+import { PublicHeader } from "@/components/book/public-header";
 import { loginAction, type LoginState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,9 @@ export default function LoginPage() {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+    <div className="flex min-h-screen flex-col bg-background">
+      <PublicHeader current="login" />
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Admin sign in</CardTitle>
@@ -68,5 +71,6 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </main>
+    </div>
   );
 }

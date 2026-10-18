@@ -9,7 +9,9 @@ Status: **Phase A done** (rates, API 2.2). **Phase B done** (public `/book`
 page). **Phase C** in the booking app: #61 rates (PR #63) and #62 availability
 endpoint (PR #65), both open. **Phase D done** on this server (live free beds,
 the private-address allowlist, `PUSH_SIGNING_KEY` passed through compose).
-Phase E (release) not started.
+Phase E (release) not started. **Bed planner** (#25, 17 Oct 2026): `/book`
+and the home page show free beds night by night (the club's answer carries
+`nights` since AlpineClubBookingsNZ #79).
 
 ---
 
@@ -135,12 +137,13 @@ registry names. Each active `Lodge` gets a **Central lodge** setting chosen
 from the names the club owns; a club with one active lodge that owns one name
 is linked without setup.
 
-17. **Endpoint** `GET /api/webhooks/servernz-availability?lodge=<name>&from=YYYY-MM-DD&to=YYYY-MM-DD`
+17. **Endpoint** `GET /api/webhooks/servernz-availability?lodgeId=<central id>&from=YYYY-MM-DD&to=YYYY-MM-DD`
     (beside the push receiver, at the push URL's origin)
-    — answers `{ lodge, from, to, freeBeds }`, where `freeBeds` is the
-    **minimum** free beds across every night of the stay, computed with the
+    — answers `{ lodgeId, from, to, freeBeds, nights }`, where `freeBeds` is the
+    **minimum** free beds across every night of the stay and `nights` (since
+    AlpineClubBookingsNZ #79) lists `{ date, freeBeds }` for each night, computed with the
     existing `src/lib/capacity.ts` (holds, whole-lodge bookings and closed
-    nights included). Read-only; returns a number, never booking or member
+    nights included). Read-only; returns counts, never booking or member
     detail.
 18. **Authentication** — no member session. The server signs
     `${timestamp}.GET ${path}?${query}` with HMAC-SHA256 and the club's push
