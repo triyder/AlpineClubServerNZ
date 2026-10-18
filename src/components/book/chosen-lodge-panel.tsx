@@ -3,7 +3,8 @@ import { cn } from "@/lib/utils";
 import { seasonSpanText } from "@/lib/lodge-seasons";
 import { LODGE_FACILITY_LABELS } from "@/lib/other-lodges";
 import { AGE_GROUPS, formatNzd, priceNights, type SearchQuery, type SearchResult } from "@/lib/lodge-search";
-import { guestWords, nightInWords } from "@/lib/bed-planner";
+import { BOOKING_REQUEST_SUBJECT, bookingRequestBody, guestWords, nightInWords } from "@/lib/bed-planner";
+import { EmailClubButton } from "@/components/book/email-club-button";
 
 /**
  * The lodge chosen in the bed planner (#25): its photo and facts, the stay
@@ -145,12 +146,26 @@ export function ChosenLodgePanel({ result, query }: { result: SearchResult; quer
             <ExternalLink aria-hidden className="h-4 w-4" />
             <span className="sr-only">(opens {lodge.name}&apos;s booking site in a new tab)</span>
           </a>
+        ) : lodge.reachable ? (
+          // No booking page, but a booking officer's email (owner, 18 Oct 2026).
+          <EmailClubButton
+            lodgeId={lodge.id}
+            lodgeName={lodge.name}
+            subject={BOOKING_REQUEST_SUBJECT}
+            body={bookingRequestBody(
+              [...AGE_GROUPS].reverse().map((g) => ({ ...g, count: query.guests[g.key] })),
+              query.checkIn,
+              query.checkOut,
+            )}
+          />
         ) : (
           <span className="inline-flex h-12 items-center justify-center rounded-lg bg-muted px-4 text-sm text-muted-foreground">
             No booking page yet
           </span>
         )}
-        <p className="text-center text-xs text-muted-foreground">Booked on the club&apos;s own site</p>
+        <p className="text-center text-xs text-muted-foreground">
+          {lodge.canBook || !lodge.reachable ? "Booked on the club’s own site" : "Ask the club’s booking officer"}
+        </p>
       </div>
     </section>
   );

@@ -208,3 +208,35 @@ export function applyQuickPick(params: RawSearchParams, today: string): RawSearc
   const stay = quickPickStay(when as QuickPick, today);
   return stay ? { ...rest, checkIn: stay.checkIn, checkOut: stay.checkOut } : rest;
 }
+
+/** "18 Dec 2026": a day in words, with its year, for an email. */
+export function dayWithYear(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** The subject of the "Email the club" message (owner, 18 Oct 2026). */
+export const BOOKING_REQUEST_SUBJECT = "Booking request from Alpine Booking Server";
+
+/**
+ * The body of the "Email the club" message (owner, 18 Oct 2026), for a lodge
+ * with no booking page but a booking officer's email: the group by age tier
+ * (largest first, as the search lists them) and the stay, then lines for the
+ * guest to fill in.
+ */
+export function bookingRequestBody(
+  groups: ReadonlyArray<{ label: string; plural: string; count: number }>,
+  arrive: string,
+  leave: string,
+): string {
+  const who = groups.filter((g) => g.count > 0).map((g) => guestWords(g, g.count));
+  const party = who.length > 1 ? `${who.slice(0, -1).join(", ")} and ${who[who.length - 1]}` : (who[0] ?? "my group");
+  return [
+    `Please advise if a booking can be made for ${party} for the period ${dayWithYear(arrive)} to ${dayWithYear(leave)}.`,
+    "",
+    "Please respond to me at:",
+    "Name: ",
+    "Email: ",
+    "Phone: ",
+  ].join("\r\n");
+}
