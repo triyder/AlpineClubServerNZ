@@ -50,9 +50,9 @@ function chooseHref(params: RawSearchParams, lodgeId: string): string {
   return `/book?${url.toString()}#chosen-lodge`;
 }
 
-/** The price of the stay, or "No price" (the panel says why). */
+/** The price of the stay, or "Unknown" (the panel says why). */
 function stayText(r: PlannerResult): string {
-  return r.estimate.total !== null ? formatNzd(r.estimate.total) : "No price";
+  return r.estimate.total !== null ? formatNzd(r.estimate.total) : "Unknown";
 }
 
 function Planner({

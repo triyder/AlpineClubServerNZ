@@ -44,7 +44,7 @@ export interface PlannerRow {
   nights: Record<string, number> | null;
   /** The fewest free beds on any night of the stay, or null when unknown. */
   stayFreeBeds: number | null;
-  /** "$252", or why there is no price. */
+  /** "$252", or "Unknown". */
   stayText: string;
   /** The search with this lodge chosen (the link without JavaScript). */
   href: string;

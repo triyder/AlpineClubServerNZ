@@ -123,7 +123,7 @@ export function ChosenLodgePanel({ result, query }: { result: SearchResult; quer
       <div className="flex flex-col justify-end gap-2">
         <p className="text-xs text-muted-foreground">Non-member total, NZD incl. GST</p>
         <p className="text-4xl font-extrabold leading-none tabular-nums">
-          {estimate.total !== null ? formatNzd(estimate.total) : "No price"}
+          {estimate.total !== null ? formatNzd(estimate.total) : "Unknown"}
         </p>
         {estimate.total === null ? (
           <p className="text-sm text-muted-foreground">

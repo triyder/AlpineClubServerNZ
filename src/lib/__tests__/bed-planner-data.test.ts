@@ -24,7 +24,8 @@ vi.mock("@/lib/lodge-search", async (original) => ({
   toPublicLodge: (record: unknown) => record,
 }));
 
-import { askNights, loadPlanner } from "@/lib/bed-planner-data";
+import { askNights, loadPlanner, plannerOrder } from "@/lib/bed-planner-data";
+import type { SearchResult } from "@/lib/lodge-search";
 import { plannerWindow } from "@/lib/bed-planner";
 import type { PublicLodge } from "@/lib/lodge-search";
 
@@ -100,5 +101,29 @@ describe("loadPlanner", () => {
     expect(results[0]?.availableBeds).toBe(9);
     expect(results[0]?.availability.nights?.size).toBe(7);
     expect(results[1]?.availability).toEqual({ nights: null, stayFreeBeds: null });
+  });
+});
+
+describe("plannerOrder (owner, 18 Oct 2026)", () => {
+  const result = (name: string, total: number | null) =>
+    ({ lodge: { id: name.toLowerCase(), name }, estimate: { nights: 3, total } }) as unknown as SearchResult;
+
+  it("lists every lodge with a price A to Z, then every unknown price A to Z", () => {
+    const sorted = [
+      result("Whakapapa Lodge", null),
+      result("Ruapehu Hut", 252),
+      result("arlberg", null),
+      result("Mangatepopo", 0),
+      result("Aorangi", 410.5),
+      result("Craig's Hut", null),
+    ].sort(plannerOrder);
+    expect(sorted.map((r) => r.lodge.name)).toEqual([
+      "Aorangi",
+      "Mangatepopo", // $0.00 is a price
+      "Ruapehu Hut",
+      "arlberg", // A to Z ignores case
+      "Craig's Hut",
+      "Whakapapa Lodge",
+    ]);
   });
 });

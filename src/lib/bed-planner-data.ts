@@ -48,6 +48,17 @@ export async function askNights(
   );
 }
 
+/**
+ * The planner's order (owner, 18 Oct 2026): every lodge with a price for the
+ * stay first ($0.00 is a price), then every lodge whose price is unknown, each
+ * group A to Z by name (ties by id, so the order is stable).
+ */
+export function plannerOrder(a: SearchResult, b: SearchResult): number {
+  const priced = Number(b.estimate.total !== null) - Number(a.estimate.total !== null);
+  if (priced !== 0) return priced;
+  return a.lodge.name.localeCompare(b.lodge.name, "en-NZ", { sensitivity: "base" }) || a.lodge.id.localeCompare(b.lodge.id);
+}
+
 /** The planner for a valid search. */
 export async function loadPlanner(query: SearchQuery, today: string): Promise<Planner> {
   const window = plannerWindow(query.checkIn, query.checkOut, today);
@@ -59,9 +70,11 @@ export async function loadPlanner(query: SearchQuery, today: string): Promise<Pl
   const known = new Map(
     [...nights].flatMap(([id, n]) => (n.stayFreeBeds === null ? [] : [[id, n.stayFreeBeds] as const])),
   );
-  const results = searchLodges(lodges, query, known).map((r) => ({
-    ...r,
-    availability: nights.get(r.lodge.id) ?? { nights: null, stayFreeBeds: null },
-  }));
+  const results = searchLodges(lodges, query, known)
+    .map((r) => ({
+      ...r,
+      availability: nights.get(r.lodge.id) ?? { nights: null, stayFreeBeds: null },
+    }))
+    .sort(plannerOrder);
   return { window, results };
 }
