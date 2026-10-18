@@ -2,6 +2,7 @@ import { ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LeaveFollowsArrive } from "@/components/book/leave-follows-arrive";
 import {
   LODGE_BOOLEAN_FIELDS,
   LODGE_FACILITY_LABELS,
@@ -14,7 +15,7 @@ import {
 
 /**
  * The bed planner's search (#25): arrive, leave, the guests by age group and
- * the "must have" facilities in a drop-down list of ticks. A plain GET form,
+ * the amenities the lodge must have, in a drop-down list of ticks. A plain GET form,
  * so the search lives in the URL and works without JavaScript.
  */
 export function SearchBar({ form, today }: { form: SearchFormValues; today: string }) {
@@ -57,11 +58,11 @@ export function SearchBar({ form, today }: { form: SearchFormValues; today: stri
       </fieldset>
       <details className="group relative">
         <summary className="flex h-11 cursor-pointer list-none items-center gap-2 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-          Must have{ticked > 0 ? ` (${ticked})` : ""}
+          Amenities{ticked > 0 ? ` (${ticked})` : ""}
           <ChevronDown aria-hidden className="h-4 w-4 transition-transform group-open:rotate-180" />
         </summary>
         <fieldset className="absolute z-20 mt-2 grid w-72 max-w-[calc(100vw-2rem)] gap-2 rounded-lg border border-border bg-card p-4 shadow-lg">
-          <legend className="sr-only">The lodge must have</legend>
+          <legend className="sr-only">Amenities the lodge must have</legend>
           <p className="text-xs text-muted-foreground">Show only lodges that have every ticked facility.</p>
           {LODGE_BOOLEAN_FIELDS.map((key) => (
             <label key={key} className="flex min-h-7 items-center gap-2 text-sm">
@@ -77,6 +78,7 @@ export function SearchBar({ form, today }: { form: SearchFormValues; today: stri
           ))}
         </fieldset>
       </details>
+      <LeaveFollowsArrive arriveId="checkIn" leaveId="checkOut" />
       <Button type="submit" className="h-11 px-6">
         <Search className="h-4 w-4" aria-hidden />
         Search

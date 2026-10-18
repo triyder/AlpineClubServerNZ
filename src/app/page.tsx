@@ -2,9 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Search } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
-import { AGE_GROUPS, GUESTS_PER_GROUP_MAX, todayInNz } from "@/lib/lodge-search";
+import {
+  AGE_GROUPS,
+  GUESTS_PER_GROUP_MAX,
+  todayInNz,
+} from "@/lib/lodge-search";
 import { quickPickStay, type QuickPick } from "@/lib/bed-planner";
 import { PublicHeader } from "@/components/book/public-header";
+import { LeaveFollowsArrive } from "@/components/book/leave-follows-arrive";
 
 /**
  * The public home page (#25; owner's layout, 18 Oct 2026): Option A's "Stay at
@@ -28,7 +33,7 @@ const GUEST_FIELDS = [...AGE_GROUPS].reverse();
 const POINTS = [
   {
     title: "Live from the club",
-    text: "Free beds are asked from each club's own booking site when you look, never guessed.",
+    text: "Free beds are asked from each club's own booking site unless unavailable where you can still try to book directly with the club.",
   },
   {
     title: "Priced for your group",
@@ -71,23 +76,42 @@ export default async function HomePage() {
               Stay at a club lodge in the mountains
             </h1>
             <p className="max-w-2xl text-lg text-[#DCE8DF] sm:text-xl">
-              Search lodges run by New Zealand alpine and tramping clubs, compare beds and prices, then book
-              directly with the club.
+              Search lodges run by New Zealand alpine and tramping clubs,
+              compare beds and prices, then book directly with the club.
             </p>
 
             <form method="get" action="/book" className="space-y-4">
               <div className="grid grid-cols-2 items-end gap-4 rounded-xl bg-card p-5 text-card-foreground shadow-2xl lg:grid-cols-[minmax(9.5rem,2fr)_minmax(9.5rem,2fr)_repeat(4,minmax(0,1fr))_auto]">
                 <label className="col-span-2 space-y-1.5 text-sm font-semibold sm:col-span-1">
                   <span className="block">Arrive</span>
-                  <input name="checkIn" type="date" min={today} required className={fieldClass} />
+                  <input
+                    id="home-checkIn"
+                    name="checkIn"
+                    type="date"
+                    min={today}
+                    required
+                    className={fieldClass}
+                  />
                 </label>
                 <label className="col-span-2 space-y-1.5 text-sm font-semibold sm:col-span-1">
                   <span className="block">Leave</span>
-                  <input name="checkOut" type="date" min={today} required className={fieldClass} />
+                  <input
+                    id="home-checkOut"
+                    name="checkOut"
+                    type="date"
+                    min={today}
+                    required
+                    className={fieldClass}
+                  />
                 </label>
                 {GUEST_FIELDS.map((g) => (
-                  <label key={g.key} className="space-y-1.5 text-sm font-semibold">
-                    <span className="block">{g.plural.charAt(0).toUpperCase() + g.plural.slice(1)}</span>
+                  <label
+                    key={g.key}
+                    className="space-y-1.5 text-sm font-semibold"
+                  >
+                    <span className="block">
+                      {g.plural.charAt(0).toUpperCase() + g.plural.slice(1)}
+                    </span>
                     <input
                       name={g.key}
                       type="number"
@@ -108,8 +132,13 @@ export default async function HomePage() {
                 </button>
               </div>
 
+              <LeaveFollowsArrive arriveId="home-checkIn" leaveId="home-checkOut" />
               {picks.length > 0 ? (
-                <div role="group" aria-label="Quick picks" className="flex flex-wrap gap-3">
+                <div
+                  role="group"
+                  aria-label="Quick picks"
+                  className="flex flex-wrap gap-3"
+                >
                   {picks.map((p) => (
                     <button
                       key={p.when}
@@ -128,11 +157,19 @@ export default async function HomePage() {
           </div>
         </section>
 
-        <section aria-labelledby="how-heading" className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
-          <h2 id="how-heading" className="sr-only">How it works</h2>
+        <section
+          aria-labelledby="how-heading"
+          className="mx-auto max-w-6xl px-4 py-14 sm:px-6"
+        >
+          <h2 id="how-heading" className="sr-only">
+            How it works
+          </h2>
           <ol className="grid gap-5 sm:grid-cols-3">
             {POINTS.map((p, i) => (
-              <li key={p.title} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6">
+              <li
+                key={p.title}
+                className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6"
+              >
                 <span
                   aria-hidden
                   className={`${PINE} flex h-9 w-9 items-center justify-center rounded-full font-bold text-white`}
@@ -149,9 +186,12 @@ export default async function HomePage() {
         <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-5 rounded-xl bg-[#14231A] p-8 text-white">
             <div className="max-w-2xl space-y-1">
-              <h2 className="text-2xl font-extrabold tracking-tight">Club lodge on AlpineClubBookingsNZ?</h2>
+              <h2 className="text-2xl font-extrabold tracking-tight">
+                Club lodge on AlpineClubBookingsNZ?
+              </h2>
               <p className="text-[#C9D6CC]">
-                List your lodge here. Your rates, seasons and free beds come straight from your own booking site.
+                List your lodge here. Your rates, seasons and free beds come
+                straight from your own booking site.
               </p>
             </div>
             <Link
