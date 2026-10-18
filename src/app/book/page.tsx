@@ -51,9 +51,27 @@ function chooseHref(params: RawSearchParams, lodgeId: string): string {
   return `/book?${url.toString()}#chosen-lodge`;
 }
 
-/** The price of the stay, or "Unknown" (the panel says why). */
+/** The search's own URL with the grid starting at `from` (‹ and ›); no lodge open. */
+function weekHref(params: RawSearchParams, from: string): string {
+  const url = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "lodge" || key === "unavailable" || key === "view" || value === undefined) continue;
+    for (const v of Array.isArray(value) ? value : [value]) url.append(key, v);
+  }
+  url.set("view", from);
+  // Land on the grid, not the top of the page.
+  return `/book?${url.toString()}#planner`;
+}
+
+/** The price of the stay, or "Ask the club" when it cannot be worked out (the panel says why). */
 function stayText(r: PlannerResult): string {
-  return r.estimate.total !== null ? formatNzd(r.estimate.total) : "Unknown";
+  return r.estimate.total !== null ? formatNzd(r.estimate.total) : "Ask the club";
+}
+
+/** Under "Ask the club": how many beds the lodge has, when it has said. */
+function stayNote(r: PlannerResult): string | undefined {
+  if (r.estimate.total !== null || r.lodge.bedCapacity === null) return undefined;
+  return `${r.lodge.bedCapacity} ${r.lodge.bedCapacity === 1 ? "bed" : "beds"} in lodge`;
 }
 
 function Planner({
@@ -61,11 +79,15 @@ function Planner({
   params,
   results,
   nights,
+  previous,
+  next,
 }: {
   query: SearchQuery;
   params: RawSearchParams;
   results: PlannerResult[];
   nights: string[];
+  previous: string | null;
+  next: string | null;
 }) {
   const guests = totalGuests(query.guests);
   const wanted = typeof params.lodge === "string" ? params.lodge : undefined;
@@ -79,6 +101,7 @@ function Planner({
     nights: r.availability.nights ? Object.fromEntries(r.availability.nights) : null,
     stayFreeBeds: r.availability.stayFreeBeds,
     stayText: stayText(r),
+    stayNote: stayNote(r),
     href: chooseHref(params, r.lodge.id),
   }));
   const stay = eachNight(query.checkIn, query.checkOut);
@@ -101,6 +124,8 @@ function Planner({
         caption={`Free beds, ${nightsInWords(nights)}`}
         panels={results.map((r) => ({ id: r.lodge.id, panel: <ChosenLodgePanel result={r} query={query} /> }))}
         initialId={pick?.lodge.id ?? null}
+        previousHref={previous ? weekHref(params, previous) : null}
+        nextHref={next ? weekHref(params, next) : null}
       />
     </div>
   );
@@ -141,14 +166,22 @@ export default async function BookPage({
       </p>
     );
   } else {
-    const { window, results } = await loadPlanner(parsed.query, today);
+    const view = typeof params.view === "string" ? params.view : undefined;
+    const { window, previous, next, results } = await loadPlanner(parsed.query, today, view);
     body =
       results.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
           No lodges have room for this group. Try fewer facilities, other dates or a smaller group.
         </p>
       ) : (
-        <Planner query={parsed.query} params={params} results={results} nights={window.nights} />
+        <Planner
+          query={parsed.query}
+          params={params}
+          results={results}
+          nights={window.nights}
+          previous={previous}
+          next={next}
+        />
       );
   }
 

@@ -51,6 +51,49 @@ export function plannerWindow(checkIn: string, checkOut: string, today: string):
   return { from, to, nights: eachNight(from, to) };
 }
 
+/** How far one press of ‹ or › moves the grid. */
+export const PLANNER_STEP_NIGHTS = 7;
+
+export interface PlannerView {
+  /** The nights the grid shows. */
+  window: PlannerWindow;
+  /** The nights the clubs are asked about: the grid's AND the stay's, so the stay is always known. */
+  ask: { from: string; to: string };
+  /** The first night shown after pressing ‹ or ›, or null where it cannot go. */
+  previous: string | null;
+  next: string | null;
+}
+
+/**
+ * The grid moved a week at a time (owner, 18 Oct 2026, the Option D design's
+ * ‹ ›). `view` is the first night shown (`?view=`); without it, or when it
+ * cannot be shown, the grid sits around the stay (`plannerWindow`). The grid
+ * keeps its length; the clubs are asked about the grid's nights and the
+ * stay's together, which may not pass thirty nights (the most one club
+ * question covers), so the arrows stop there, and never go before today.
+ */
+export function plannerView(checkIn: string, checkOut: string, today: string, view?: string): PlannerView {
+  const home = plannerWindow(checkIn, checkOut, today);
+  const length = home.nights.length;
+  const askFor = (from: string) => {
+    const to = addDays(from, length);
+    return { from: from < checkIn ? from : checkIn, to: to > checkOut ? to : checkOut };
+  };
+  const fits = (from: string) => from >= today && nightsBetween(askFor(from).from, askFor(from).to) <= PLANNER_MAX_NIGHTS;
+
+  const from = view && /^\d{4}-\d{2}-\d{2}$/.test(view) && fits(view) ? view : home.from;
+  const to = addDays(from, length);
+  const back = addDays(from, -PLANNER_STEP_NIGHTS);
+  const backClamped = back < today ? today : back;
+  const forward = addDays(from, PLANNER_STEP_NIGHTS);
+  return {
+    window: { from, to, nights: eachNight(from, to) },
+    ask: askFor(from),
+    previous: backClamped < from && fits(backClamped) ? backClamped : null,
+    next: fits(forward) ? forward : null,
+  };
+}
+
 /** What the grid knows about one lodge. */
 export interface LodgeNights {
   /** Free beds by night, or null when the club did not say night by night. */

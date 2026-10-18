@@ -44,8 +44,10 @@ export interface PlannerRow {
   nights: Record<string, number> | null;
   /** The fewest free beds on any night of the stay, or null when unknown. */
   stayFreeBeds: number | null;
-  /** "$252", or "Unknown". */
+  /** "$252", or "Ask the club". */
   stayText: string;
+  /** Small print under an unknown price: "32 beds in lodge". */
+  stayNote?: string;
   /** The search with this lodge chosen (the link without JavaScript). */
   href: string;
 }
@@ -81,36 +83,48 @@ export function BedCell({
   );
 }
 
-const LEGEND: Array<{ level: NightLevel; sample: string; words: string }> = [
-  { level: "room", sample: "12", words: LEVEL_WORDS.room },
-  { level: "few", sample: "5", words: LEVEL_WORDS.few },
-  { level: "short", sample: "2", words: LEVEL_WORDS.short },
-  { level: "unknown", sample: "?", words: LEVEL_WORDS.unknown },
-];
-
+/**
+ * The key, in the Option D design's style (owner, 18 Oct 2026): a small
+ * square in each level's colour and border, then its words; the unknown
+ * kinds show their mark ("?" or "–") in place of the square.
+ */
 export function PlannerLegend({ showNotNightly = false }: { showNotNightly?: boolean }) {
+  const square = "inline-block h-3.5 w-3.5 shrink-0 rounded-sm";
   return (
-    <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-      {LEGEND.map(({ level, sample, words }) => (
-        <li key={level} className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className={cn("inline-flex h-6 min-w-7 items-center justify-center rounded px-1 text-xs font-semibold", LEVEL_STYLES[level])}
-          >
-            {sample}
-          </span>
-          {words}
+    <ul aria-label="Key" className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+      {(["room", "few", "short"] as const).map((level) => (
+        <li key={level} className="flex items-center gap-1.5">
+          <span aria-hidden className={cn(square, LEVEL_STYLES[level], "border")} />
+          {LEVEL_WORDS[level]}
         </li>
       ))}
+      <li className="flex items-center gap-1.5">
+        <span aria-hidden className="font-bold text-foreground">?</span>
+        {LEVEL_WORDS.unknown}
+      </li>
       {showNotNightly ? (
-        <li className="flex items-center gap-2">
-          <span aria-hidden className={cn("inline-flex h-6 min-w-7 items-center justify-center rounded px-1 text-xs font-semibold", LEVEL_STYLES.unknown)}>
-            –
-          </span>
+        <li className="flex items-center gap-1.5">
+          <span aria-hidden className="font-bold text-foreground">–</span>
           {NOT_NIGHTLY_WORDS}
         </li>
       ) : null}
     </ul>
+  );
+}
+
+const ARROW =
+  "inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card text-lg font-semibold";
+
+/** ‹ or ›: a link to the grid a week earlier or later, or a dimmed mark where it cannot go. */
+function WeekArrow({ href, label, mark }: { href: string | null; label: string; mark: string }) {
+  return href ? (
+    <a href={href} aria-label={label} className={cn(ARROW, "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}>
+      <span aria-hidden>{mark}</span>
+    </a>
+  ) : (
+    <span aria-hidden className={cn(ARROW, "cursor-not-allowed opacity-40")}>
+      {mark}
+    </span>
   );
 }
 
@@ -126,6 +140,8 @@ export function BedPlannerGrid({
   panelWidth,
   scrollRef,
   panelRef,
+  previousHref,
+  nextHref,
 }: {
   nights: string[];
   stayNights: ReadonlySet<string>;
@@ -142,15 +158,27 @@ export function BedPlannerGrid({
   panelWidth?: number;
   scrollRef?: Ref<HTMLDivElement>;
   panelRef?: Ref<HTMLDivElement>;
+  /** The grid a week earlier and later (‹ ›); null where it cannot go. */
+  previousHref?: string | null;
+  nextHref?: string | null;
 }) {
   const columns = nights.length + 2;
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
+    <div id="planner" className="scroll-mt-4 overflow-hidden rounded-xl border border-border bg-card">
+      {/* The title, the key and the arrows, above the scroll box so they stay put on a phone. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-border bg-muted/40 px-4 py-3">
+        <p aria-hidden className="text-base font-bold">{caption}</p>
+        <PlannerLegend showNotNightly={rows.some((r) => r.nights === null && r.stayFreeBeds !== null)} />
+        {previousHref !== undefined || nextHref !== undefined ? (
+          <nav aria-label="Move the grid" className="ml-auto flex gap-2">
+            <WeekArrow href={previousHref ?? null} label="A week earlier" mark="‹" />
+            <WeekArrow href={nextHref ?? null} label="A week later" mark="›" />
+          </nav>
+        ) : null}
+      </div>
       <div ref={scrollRef} className="overflow-x-auto">
         <table className="w-full min-w-[44rem] border-collapse text-sm">
-          <caption className="border-b border-border bg-muted/40 px-4 py-3 text-left text-base font-bold">
-            {caption}
-          </caption>
+          <caption className="sr-only">{caption}</caption>
           <thead>
             <tr>
               <th scope="col" className="sticky left-0 z-10 bg-card px-4 py-2 text-left text-xs font-semibold text-muted-foreground">
@@ -222,6 +250,9 @@ export function BedPlannerGrid({
                     {row.nights === null && row.stayFreeBeds !== null ? (
                       <span className="block text-xs font-normal text-muted-foreground">{freeBedsWords(row.stayFreeBeds)}</span>
                     ) : null}
+                    {row.stayNote ? (
+                      <span className="block text-xs font-normal text-muted-foreground">{row.stayNote}</span>
+                    ) : null}
                   </td>
                 </tr>
                 {chosen && expanded ? (
@@ -244,9 +275,6 @@ export function BedPlannerGrid({
             })}
           </tbody>
         </table>
-      </div>
-      <div className="border-t border-border px-4 py-3">
-        <PlannerLegend showNotNightly={rows.some((r) => r.nights === null && r.stayFreeBeds !== null)} />
       </div>
     </div>
   );

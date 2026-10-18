@@ -1,5 +1,5 @@
 import { fetchFreeBeds, loadAvailabilityTargets } from "@/lib/club-availability";
-import { lodgeNights, plannerWindow, type LodgeNights, type PlannerWindow } from "@/lib/bed-planner";
+import { lodgeNights, plannerView, type LodgeNights, type PlannerWindow } from "@/lib/bed-planner";
 import { searchLodges, toPublicLodge, type PublicLodge, type SearchQuery, type SearchResult } from "@/lib/lodge-search";
 import { loadPublicLodgeRecords } from "@/lib/public-lodges";
 
@@ -16,7 +16,11 @@ export interface PlannerResult extends SearchResult {
 }
 
 export interface Planner {
+  /** The nights the grid shows. */
   window: PlannerWindow;
+  /** The first night shown after ‹ or ›, or null where the grid cannot go. */
+  previous: string | null;
+  next: string | null;
   results: PlannerResult[];
 }
 
@@ -60,13 +64,15 @@ export function plannerOrder(a: SearchResult, b: SearchResult): number {
 }
 
 /** The planner for a valid search. */
-export async function loadPlanner(query: SearchQuery, today: string): Promise<Planner> {
-  const window = plannerWindow(query.checkIn, query.checkOut, today);
+export async function loadPlanner(query: SearchQuery, today: string, view?: string): Promise<Planner> {
+  const { window, ask, previous, next } = plannerView(query.checkIn, query.checkOut, today, view);
   // A deleted lodge (#16) is not offered to the public.
   const lodges = (await loadPublicLodgeRecords()).map(toPublicLodge);
   // Only lodges that already fit the party and the ticked facilities are asked.
   const candidates = searchLodges(lodges, query).map((r) => r.lodge);
-  const nights = await askNights(candidates, window, query);
+  // The grid's nights and the stay's together (`ask`), so the stay's free
+  // beds are known wherever the grid has been moved to.
+  const nights = await askNights(candidates, { ...ask, nights: [] }, query);
   const known = new Map(
     [...nights].flatMap(([id, n]) => (n.stayFreeBeds === null ? [] : [[id, n.stayFreeBeds] as const])),
   );
@@ -76,5 +82,5 @@ export async function loadPlanner(query: SearchQuery, today: string): Promise<Pl
       availability: nights.get(r.lodge.id) ?? { nights: null, stayFreeBeds: null },
     }))
     .sort(plannerOrder);
-  return { window, results };
+  return { window, previous, next, results };
 }

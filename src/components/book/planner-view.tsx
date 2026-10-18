@@ -38,6 +38,8 @@ export function PlannerView({
   caption,
   panels,
   initialId,
+  previousHref,
+  nextHref,
 }: {
   nights: string[];
   stayNights: string[];
@@ -46,6 +48,8 @@ export function PlannerView({
   caption: string;
   panels: Array<{ id: string; panel: ReactNode }>;
   initialId: string | null;
+  previousHref: string | null;
+  nextHref: string | null;
 }) {
   const [openId, setOpenId] = useState(initialId);
   const [opened, setOpened] = useState(false);
@@ -114,6 +118,8 @@ export function PlannerView({
       panelWidth={panelWidth}
       scrollRef={scrollRef}
       panelRef={panelRef}
+      previousHref={previousHref}
+      nextHref={nextHref}
       onChoose={(row, event) => {
         // A modified click (new tab or window) keeps the link's own behaviour.
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
