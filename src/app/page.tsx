@@ -1,20 +1,29 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Search } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
-import { todayInNz } from "@/lib/lodge-search";
-import { weekendStays } from "@/lib/bed-planner";
+import { AGE_GROUPS, GUESTS_PER_GROUP_MAX, todayInNz } from "@/lib/lodge-search";
+import { quickPickStay, type QuickPick } from "@/lib/bed-planner";
 import { PublicHeader } from "@/components/book/public-header";
-import { WeekendGrid } from "@/components/book/weekend-grid";
 
 /**
- * The public home page in the "Bed planner" design (#25): where there is room
- * this weekend, with quick picks into the bed planner. Signed-in operators go
- * straight to the console.
+ * The public home page (#25; owner's layout, 18 Oct 2026): Option A's "Stay at
+ * a club lodge in the mountains" banner with its search, the three quick picks
+ * under it, the bed planner's three points, and the club panel. Signed-in
+ * operators go straight to the console.
+ *
+ * One plain GET form to `/book`: "Search lodges" sends the dates typed; each
+ * quick pick is a submit button carrying `when=` (no date check, so the date
+ * boxes may be empty), which the planner turns into dates (`applyQuickPick`).
+ * Either way the guest numbers typed go with it, and it works without
+ * JavaScript.
  */
 
-function stayHref(stay: { checkIn: string; checkOut: string }): string {
-  return `/book?checkIn=${stay.checkIn}&checkOut=${stay.checkOut}`;
-}
+const PINE = "bg-[#1F4D34]";
+const SIGNAL = "bg-[#C2410C] hover:bg-[#9A3412]";
+
+/** Fields in the order the banner shows them: adults first, as most parties are. */
+const GUEST_FIELDS = [...AGE_GROUPS].reverse();
 
 const POINTS = [
   {
@@ -31,71 +40,127 @@ const POINTS = [
   },
 ];
 
+const PICKS: Array<{ when: QuickPick; label: string }> = [
+  { when: "this-weekend", label: "This weekend" },
+  { when: "next-weekend", label: "Next weekend" },
+  { when: "school-holidays", label: "School holidays" },
+];
+
+const fieldClass =
+  "h-12 w-full rounded-md border border-input bg-background px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 export default async function HomePage() {
   const session = await getSession();
   if (session) {
     redirect("/dashboard");
   }
-  const { thisWeekend, nextWeekend } = weekendStays(todayInNz());
+  const today = todayInNz();
+  // A pick with no dates behind it (no school holidays listed ahead) is not offered.
+  const picks = PICKS.filter((p) => quickPickStay(p.when, today) !== null);
 
   return (
     <div className="min-h-screen bg-background">
       <PublicHeader />
       <main>
-        <section className="mx-auto flex max-w-6xl flex-wrap items-center gap-10 px-4 py-12 sm:px-6 sm:py-16">
-          <div className="min-w-0 flex-[1_1_22rem] space-y-5">
-            <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">
-              Where is there room this weekend?
-            </h1>
-            <p className="max-w-xl text-lg text-muted-foreground">
-              See free beds at club lodges night by night, straight from each club&apos;s booking site. Then book
-              with the club.
+        <section className={`${PINE} text-white`}>
+          <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 pb-16 pt-14 sm:px-6 sm:pb-20">
+            <p className="self-start rounded bg-[#C2410C] px-3 py-1 text-sm font-bold uppercase tracking-wider">
+              Club lodges · Non-member rates
             </p>
-            <nav aria-label="Quick picks" className="flex flex-wrap gap-2">
-              <Link
-                href={stayHref(thisWeekend)}
-                className="inline-flex h-11 items-center rounded-full bg-primary px-5 font-semibold text-primary-foreground hover:bg-primary/90"
-              >
-                This weekend
-              </Link>
-              <Link
-                href={stayHref(nextWeekend)}
-                className="inline-flex h-11 items-center rounded-full border-2 border-border px-5 font-semibold hover:bg-muted"
-              >
-                Next weekend
-              </Link>
-              <Link href="/book" className="inline-flex h-11 items-center rounded-full px-5 font-semibold underline-offset-4 hover:underline">
-                Pick dates
-              </Link>
-            </nav>
-          </div>
-          <div className="min-w-0 flex-[1_1_30rem]">
-            <WeekendGrid checkIn={thisWeekend.checkIn} checkOut={thisWeekend.checkOut} />
+            <h1 className="max-w-4xl text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-6xl">
+              Stay at a club lodge in the mountains
+            </h1>
+            <p className="max-w-2xl text-lg text-[#DCE8DF] sm:text-xl">
+              Search lodges run by New Zealand alpine and tramping clubs, compare beds and prices, then book
+              directly with the club.
+            </p>
+
+            <form method="get" action="/book" className="space-y-4">
+              <div className="grid grid-cols-2 items-end gap-4 rounded-xl bg-card p-5 text-card-foreground shadow-2xl lg:grid-cols-[minmax(9.5rem,2fr)_minmax(9.5rem,2fr)_repeat(4,minmax(0,1fr))_auto]">
+                <label className="col-span-2 space-y-1.5 text-sm font-semibold sm:col-span-1">
+                  <span className="block">Arrive</span>
+                  <input name="checkIn" type="date" min={today} required className={fieldClass} />
+                </label>
+                <label className="col-span-2 space-y-1.5 text-sm font-semibold sm:col-span-1">
+                  <span className="block">Leave</span>
+                  <input name="checkOut" type="date" min={today} required className={fieldClass} />
+                </label>
+                {GUEST_FIELDS.map((g) => (
+                  <label key={g.key} className="space-y-1.5 text-sm font-semibold">
+                    <span className="block">{g.plural.charAt(0).toUpperCase() + g.plural.slice(1)}</span>
+                    <input
+                      name={g.key}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={GUESTS_PER_GROUP_MAX}
+                      defaultValue={g.key === "adults" ? 2 : 0}
+                      className={fieldClass}
+                    />
+                  </label>
+                ))}
+                <button
+                  type="submit"
+                  className={`${SIGNAL} inline-flex h-12 items-center justify-center gap-2 rounded-md px-6 font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring col-span-2 lg:col-span-1`}
+                >
+                  <Search aria-hidden className="h-4 w-4" />
+                  Search lodges
+                </button>
+              </div>
+
+              {picks.length > 0 ? (
+                <div role="group" aria-label="Quick picks" className="flex flex-wrap gap-3">
+                  {picks.map((p) => (
+                    <button
+                      key={p.when}
+                      type="submit"
+                      name="when"
+                      value={p.when}
+                      formNoValidate
+                      className="inline-flex h-11 items-center rounded-full border-2 border-white/80 px-5 font-semibold text-white hover:bg-white hover:text-[#1F4D34] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </form>
           </div>
         </section>
 
-        <section className="border-y border-border bg-muted/40">
-          <ul className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:grid-cols-3 sm:px-6">
-            {POINTS.map((p) => (
-              <li key={p.title} className="space-y-1">
-                <h2 className="text-lg font-bold">{p.title}</h2>
+        <section aria-labelledby="how-heading" className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+          <h2 id="how-heading" className="sr-only">How it works</h2>
+          <ol className="grid gap-5 sm:grid-cols-3">
+            {POINTS.map((p, i) => (
+              <li key={p.title} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-6">
+                <span
+                  aria-hidden
+                  className={`${PINE} flex h-9 w-9 items-center justify-center rounded-full font-bold text-white`}
+                >
+                  {i + 1}
+                </span>
+                <h3 className="text-lg font-bold">{p.title}</h3>
                 <p className="text-muted-foreground">{p.text}</p>
               </li>
             ))}
-          </ul>
+          </ol>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-5 px-4 py-10 sm:px-6">
-          <div>
-            <h2 className="text-2xl font-extrabold tracking-tight">Club lodge on AlpineClubBookingsNZ?</h2>
-            <p className="text-muted-foreground">Put your free beds in front of non-members.</p>
+        <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-5 rounded-xl bg-[#14231A] p-8 text-white">
+            <div className="max-w-2xl space-y-1">
+              <h2 className="text-2xl font-extrabold tracking-tight">Club lodge on AlpineClubBookingsNZ?</h2>
+              <p className="text-[#C9D6CC]">
+                List your lodge here. Your rates, seasons and free beds come straight from your own booking site.
+              </p>
+            </div>
+            <Link
+              href="/register"
+              className={`${SIGNAL} inline-flex h-11 items-center rounded-lg px-5 font-bold text-white`}
+            >
+              Register a lodge
+            </Link>
           </div>
-          <Link
-            href="/register"
-            className="inline-flex h-11 items-center rounded-lg bg-primary px-5 font-bold text-primary-foreground hover:bg-primary/90"
-          >
-            Register a lodge
-          </Link>
         </section>
       </main>
     </div>

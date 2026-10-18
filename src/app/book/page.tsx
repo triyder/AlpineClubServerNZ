@@ -12,7 +12,7 @@ import {
   type SearchQuery,
   eachNight,
 } from "@/lib/lodge-search";
-import { nightsInWords, partySize } from "@/lib/bed-planner";
+import { applyQuickPick, nightsInWords, partySize } from "@/lib/bed-planner";
 import { loadPlanner, type PlannerResult } from "@/lib/bed-planner-data";
 import { SearchBar } from "@/components/book/search-form";
 import type { PlannerRow } from "@/components/book/bed-planner-grid";
@@ -110,8 +110,9 @@ export default async function BookPage({
 }: {
   searchParams: Promise<RawSearchParams>;
 }) {
-  const params = await searchParams;
   const today = todayInNz();
+  // The home page's quick picks (This weekend, Next weekend, School holidays).
+  const params = applyQuickPick(await searchParams, today);
   const parsed = parseSearchParams(params, today);
   const unavailable = params.unavailable !== undefined;
 

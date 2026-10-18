@@ -4,7 +4,9 @@ import {
   nightsBetween,
   totalGuests,
   type GuestCounts,
+  type RawSearchParams,
 } from "@/lib/lodge-search";
+import { schoolHolidayStay } from "@/lib/school-holidays";
 import type { ClubAvailability } from "@/lib/club-availability";
 
 /**
@@ -140,15 +142,26 @@ export function partySize(guests: GuestCounts): number {
   return Math.max(1, totalGuests(guests));
 }
 
-/** `/book/nights`' answer, for the home page's weekend grid. */
-export interface HomeNightsResponse {
-  from: string;
-  to: string;
-  lodges: Array<{
-    id: string;
-    name: string;
-    location: string | null;
-    /** Free beds by night; a night the club did not say is absent. */
-    nights: Record<string, number>;
-  }>;
+/** The home page's quick picks (#25), sent to `/book` as `when=<key>`. */
+export const QUICK_PICKS = ["this-weekend", "next-weekend", "school-holidays"] as const;
+export type QuickPick = (typeof QUICK_PICKS)[number];
+
+/** The stay a quick pick stands for today, or null (no school holidays listed ahead). */
+export function quickPickStay(pick: QuickPick, today: string): { checkIn: string; checkOut: string } | null {
+  if (pick === "school-holidays") return schoolHolidayStay(today);
+  const { thisWeekend, nextWeekend } = weekendStays(today);
+  return pick === "this-weekend" ? thisWeekend : nextWeekend;
+}
+
+/**
+ * A search sent by a quick-pick button: its dates replace whatever the date
+ * boxes held (a button press skips the form's own checks), and `when` itself
+ * is dropped, so the planner's own links and form carry plain dates.
+ */
+export function applyQuickPick(params: RawSearchParams, today: string): RawSearchParams {
+  const when = Array.isArray(params.when) ? params.when[0] : params.when;
+  if (!when || !(QUICK_PICKS as readonly string[]).includes(when)) return params;
+  const { when: _dropped, ...rest } = params;
+  const stay = quickPickStay(when as QuickPick, today);
+  return stay ? { ...rest, checkIn: stay.checkIn, checkOut: stay.checkOut } : rest;
 }

@@ -3,14 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * The bed planner's questions to the clubs (#25): one per lodge for the grid's
  * window, and a second, for the stay alone, only for a club that did not
- * answer night by night. And `/book/nights`, the home page's weekend grid.
+ * answer night by night.
  */
 
 const mocks = vi.hoisted(() => ({
   loadAvailabilityTargets: vi.fn(),
   fetchFreeBeds: vi.fn(),
   loadPublicLodgeRecords: vi.fn(),
-  checkRateLimit: vi.fn(),
   todayInNz: vi.fn(),
 }));
 vi.mock("@/lib/club-availability", () => ({
@@ -18,8 +17,6 @@ vi.mock("@/lib/club-availability", () => ({
   fetchFreeBeds: mocks.fetchFreeBeds,
 }));
 vi.mock("@/lib/public-lodges", () => ({ loadPublicLodgeRecords: mocks.loadPublicLodgeRecords }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
-vi.mock("@/lib/api-auth", () => ({ clientIp: (req: Request) => req.headers.get("x-forwarded-for") }));
 vi.mock("@/lib/lodge-search", async (original) => ({
   ...(await original<typeof import("@/lib/lodge-search")>()),
   todayInNz: mocks.todayInNz,
@@ -29,7 +26,6 @@ vi.mock("@/lib/lodge-search", async (original) => ({
 
 import { askNights, loadPlanner } from "@/lib/bed-planner-data";
 import { plannerWindow } from "@/lib/bed-planner";
-import { GET } from "@/app/book/nights/route";
 import type { PublicLodge } from "@/lib/lodge-search";
 
 const lodge = (id: string) => ({ id, name: `Lodge ${id}`, location: null }) as unknown as PublicLodge;
@@ -42,7 +38,6 @@ const nightsFor = (from: string, n: number, beds: number) =>
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.loadAvailabilityTargets.mockImplementation(async (ids: string[]) => ids.map(target));
-  mocks.checkRateLimit.mockReturnValue({ allowed: true });
   mocks.todayInNz.mockReturnValue("2026-10-17");
 });
 
@@ -105,73 +100,5 @@ describe("loadPlanner", () => {
     expect(results[0]?.availableBeds).toBe(9);
     expect(results[0]?.availability.nights?.size).toBe(7);
     expect(results[1]?.availability).toEqual({ nights: null, stayFreeBeds: null });
-  });
-});
-
-describe("GET /book/nights", () => {
-  const call = (query: string) => GET(new Request(`https://central.example/book/nights?${query}`));
-
-  it.each([
-    ["no dates", ""],
-    ["a night in the past", "from=2026-10-16&to=2026-10-18"],
-    ["no nights", "from=2026-10-20&to=2026-10-20"],
-    ["more than a week", "from=2026-10-20&to=2026-10-28"],
-    ["a date that is not real", "from=2026-02-30&to=2026-03-01"],
-    ["more than two years ahead", "from=2028-10-20&to=2028-10-22"],
-  ])("refuses %s, asking no club and using none of the caller's limit", async (_label, query) => {
-    expect((await call(query)).status).toBe(400);
-    expect(mocks.fetchFreeBeds).not.toHaveBeenCalled();
-    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
-  });
-
-  it("allows each caller address only a few requests per window", async () => {
-    mocks.loadPublicLodgeRecords.mockResolvedValue([]);
-    mocks.fetchFreeBeds.mockResolvedValue(new Map());
-    await GET(new Request("https://central.example/book/nights?from=2026-10-23&to=2026-10-25", { headers: { "x-forwarded-for": "203.0.113.9" } }));
-    expect(mocks.checkRateLimit).toHaveBeenCalledWith("book:nights:203.0.113.9", expect.any(Number), 10);
-  });
-
-  it("shares one round of questions between requests for the same nights that overlap, then forgets it", async () => {
-    mocks.loadPublicLodgeRecords.mockResolvedValue([lodge("a")]);
-    let release!: (value: Map<string, unknown>) => void;
-    mocks.fetchFreeBeds.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
-    const first = call("from=2026-10-23&to=2026-10-25");
-    const second = call("from=2026-10-23&to=2026-10-25");
-    await new Promise((r) => setTimeout(r, 0));
-    release(new Map([["a", { freeBeds: 5, nights: new Map([["2026-10-23", 5], ["2026-10-24", 6]]) }]]));
-    const [a, b] = await Promise.all([first, second]);
-    expect(await a.json()).toEqual(await b.json());
-    expect(mocks.fetchFreeBeds).toHaveBeenCalledTimes(1);
-
-    // Once answered, nothing is kept: the next request asks again.
-    mocks.fetchFreeBeds.mockResolvedValueOnce(new Map());
-    await call("from=2026-10-23&to=2026-10-25");
-    expect(mocks.fetchFreeBeds).toHaveBeenCalledTimes(2);
-  });
-
-  it("is rate-limited per caller, asking no club when over", async () => {
-    mocks.checkRateLimit.mockReturnValue({ allowed: false });
-    const res = await call("from=2026-10-23&to=2026-10-25");
-    expect(res.status).toBe(429);
-    expect(mocks.fetchFreeBeds).not.toHaveBeenCalled();
-  });
-
-  it("answers every public lodge's free beds by night, uncached, a silent club's nights left out", async () => {
-    mocks.loadPublicLodgeRecords.mockResolvedValue([lodge("a"), lodge("b")]);
-    mocks.fetchFreeBeds.mockResolvedValueOnce(
-      new Map([["a", { freeBeds: 5, nights: new Map([["2026-10-23", 5], ["2026-10-24", 8]]) }]]),
-    );
-    const res = await call("from=2026-10-23&to=2026-10-25");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.json()).toEqual({
-      from: "2026-10-23",
-      to: "2026-10-25",
-      lodges: [
-        { id: "a", name: "Lodge a", location: null, nights: { "2026-10-23": 5, "2026-10-24": 8 } },
-        { id: "b", name: "Lodge b", location: null, nights: {} },
-      ],
-    });
-    expect(mocks.checkRateLimit).toHaveBeenCalledWith("book:nights:unknown", expect.any(Number), 10);
   });
 });

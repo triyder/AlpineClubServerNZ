@@ -4,8 +4,8 @@
  * provider (these pages have their own theme setting, light by default).
  *
  * `/book` is the public bed planner (#25); its "Book with the club" redirect
- * (`/book/go/:id`) and the home page's free-beds route (`/book/nights`) are
- * route handlers, not pages, but sit under the same prefix.
+ * (`/book/go/:id`) is a route handler, not a page, but sits under the same
+ * prefix.
  */
 export const PUBLIC_PAGES = ["/", "/login", "/register", "/book"] as const;
 
