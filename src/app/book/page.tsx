@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Image from "next/image";
 import Link from "next/link";
+import whakapapaPhoto from "../../../public/images/whakapapa-ski-field.jpg";
 import { clientIpFromHeaders } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -154,22 +156,48 @@ export default async function BookPage({
   return (
     <div className="min-h-screen bg-background">
       <PublicHeader current="book" />
-      <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Bed planner</h1>
-          <p className="text-sm text-muted-foreground">
-            Free beds at club lodges night by night, straight from each club&apos;s booking site. Prices are
-            non-member rates in NZD, incl. GST.
-          </p>
+      {/* The planner's heading and search over a faded photo of Whakapapa in
+          snow (owner, 18 Oct 2026). The photo is decorative (empty alt); its
+          credit, which the licence requires, is in the corner. */}
+      <section className="relative isolate overflow-hidden">
+        <Image
+          src={whakapapaPhoto}
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          placeholder="blur"
+          className="-z-20 object-cover object-[center_35%] opacity-95"
+        />
+        <div aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-background/25 to-background" />
+        <div className="mx-auto max-w-6xl space-y-5 px-4 pb-8 pt-16 sm:px-6 sm:pt-24">
+          <div className="max-w-2xl rounded-xl bg-background/70 p-4 backdrop-blur-sm">
+            <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Bed planner</h1>
+            <p className="text-sm text-foreground/80">
+              Free beds at club lodges night by night, straight from each club&apos;s booking site. Prices are
+              non-member rates in NZD, incl. GST.
+            </p>
+          </div>
+          {unavailable ? (
+            <p role="alert" className="rounded-xl border border-warning/60 bg-background p-3 text-sm">
+              That lodge has no booking page at the moment. Please choose another lodge.
+            </p>
+          ) : null}
+          <SearchBar form={parsed.form} today={today} />
         </div>
-
-        {unavailable ? (
-          <p role="alert" className="rounded-xl border border-warning/60 p-3 text-sm">
-            That lodge has no booking page at the moment. Please choose another lodge.
-          </p>
-        ) : null}
-
-        <SearchBar form={parsed.form} today={today} />
+        <p className="absolute right-3 top-2 text-[0.65rem] text-foreground/70">
+          Photo:{" "}
+          <a href="https://commons.wikimedia.org/wiki/File:Ruapehu_Whakapapa_Skifield_Base.jpg" className="underline">
+            Whakapapa ski field
+          </a>
+          , P. Doyle,{" "}
+          <a href="https://creativecommons.org/licenses/by-sa/4.0/" className="underline">
+            CC BY-SA 4.0
+          </a>
+          , cropped and faded
+        </p>
+      </section>
+      <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
         <section aria-label="Search results">{body}</section>
         <p className="text-xs text-muted-foreground">
           <Link href="/" className="underline-offset-4 hover:underline">Home</Link>
