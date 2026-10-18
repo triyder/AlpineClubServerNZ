@@ -8,8 +8,9 @@ import {
   LODGE_FACILITY_LABELS,
 } from "@/lib/other-lodges";
 import {
-  AGE_GROUPS,
+  GUEST_FIELDS,
   GUESTS_PER_GROUP_MAX,
+  guestFieldLabel,
   type SearchFormValues,
 } from "@/lib/lodge-search";
 
@@ -37,10 +38,10 @@ export function SearchBar({ form, today }: { form: SearchFormValues; today: stri
       <fieldset className="min-w-0 space-y-1.5">
         <legend className="text-sm font-medium leading-none">Guests</legend>
         <div className="grid grid-cols-4 gap-2 pt-1.5">
-          {AGE_GROUPS.map((g) => (
+          {GUEST_FIELDS.map((g) => (
             <div key={g.key} className="w-16 space-y-1">
               <label htmlFor={`guests-${g.key}`} className="block text-xs text-muted-foreground">
-                {g.label}
+                {guestFieldLabel(g)}
               </label>
               <Input
                 id={`guests-${g.key}`}

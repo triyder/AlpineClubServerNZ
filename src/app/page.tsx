@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { Search } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import {
-  AGE_GROUPS,
+  GUEST_FIELDS,
   GUESTS_PER_GROUP_MAX,
+  guestFieldLabel,
   todayInNz,
 } from "@/lib/lodge-search";
 import { quickPickStay, type QuickPick } from "@/lib/bed-planner";
@@ -26,9 +27,6 @@ import { LeaveFollowsArrive } from "@/components/book/leave-follows-arrive";
 
 const PINE = "bg-[#1F4D34]";
 const SIGNAL = "bg-[#C2410C] hover:bg-[#9A3412]";
-
-/** Fields in the order the banner shows them: adults first, as most parties are. */
-const GUEST_FIELDS = [...AGE_GROUPS].reverse();
 
 const POINTS = [
   {
@@ -110,7 +108,7 @@ export default async function HomePage() {
                     className="space-y-1.5 text-sm font-semibold"
                   >
                     <span className="block">
-                      {g.plural.charAt(0).toUpperCase() + g.plural.slice(1)}
+                      {guestFieldLabel(g)}
                     </span>
                     <input
                       name={g.key}

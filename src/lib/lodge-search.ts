@@ -139,6 +139,17 @@ export const AGE_GROUPS = [
 }>;
 
 export type AgeGroupKey = (typeof AGE_GROUPS)[number]["key"];
+
+/**
+ * The guest boxes in the order both search forms show them (owner, 18 Oct
+ * 2026): adults first, as most parties are, then Youth, Children, Infants.
+ */
+export const GUEST_FIELDS = [...AGE_GROUPS].reverse();
+
+/** A guest box's label: "Adults", "Youth", "Children", "Infants". */
+export function guestFieldLabel(group: { plural: string }): string {
+  return group.plural.charAt(0).toUpperCase() + group.plural.slice(1);
+}
 export type GuestCounts = Record<AgeGroupKey, number>;
 
 export const GUESTS_PER_GROUP_MAX = 50;
