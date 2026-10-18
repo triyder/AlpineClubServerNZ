@@ -76,6 +76,14 @@ export interface PublicLodge {
   cancellationPeriod: string | null;
   /** True when the lodge has a booking page to send a guest to. */
   canBook: boolean;
+  /**
+   * A guest can book or contact the club: it gives a non-member booking page
+   * or a booking officer's email. A lodge with neither is listed last on the
+   * bed planner, behind "Display all lodges" (owner, 18 Oct 2026). Here only
+   * the booking page is known; the bed planner adds the email from
+   * `loadLodgeIdsWithEmail`, which never reads the address out.
+   */
+  reachable: boolean;
   /** The facilities the lodge has, in the fixed list order. */
   facilities: LodgeBooleanField[];
   amenities: Array<{ name: string; description: string | null }>;
@@ -100,6 +108,7 @@ export function toPublicLodge(record: PublicLodgeRecord): PublicLodge {
     singleBeds: record.singleBeds,
     cancellationPeriod: record.cancellationPeriod,
     canBook: Boolean(record.siteUrl),
+    reachable: Boolean(record.siteUrl?.trim()),
     facilities: LODGE_BOOLEAN_FIELDS.filter((key) => record[key]),
     amenities: record.amenities.map((a) => ({
       name: a.name,

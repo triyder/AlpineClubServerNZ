@@ -29,6 +29,7 @@ function lodge(over: Partial<PublicLodge> = {}): PublicLodge {
     singleBeds: null,
     cancellationPeriod: null,
     canBook: true,
+    reachable: true,
     facilities: [],
     amenities: [],
     rates: noRates,
@@ -287,6 +288,12 @@ describe("the public lodge shape", () => {
     expect(out.canBook).toBe(true);
     expect(JSON.stringify(out)).not.toContain("ruapehu.example");
     expect(toPublicLodge({ ...record, siteUrl: null }).canBook).toBe(false);
+  });
+
+  it("is reachable with a booking page; an email is added later by the planner, never read here", () => {
+    expect(toPublicLodge(record).reachable).toBe(true);
+    expect(toPublicLodge({ ...record, siteUrl: null }).reachable).toBe(false);
+    expect(toPublicLodge({ ...record, siteUrl: "  " } as PublicLodgeRecord).reachable).toBe(false);
   });
 
   it("lists the facilities the lodge has and reads rates and seasons", () => {

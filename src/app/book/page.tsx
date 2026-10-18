@@ -14,7 +14,7 @@ import {
   eachNight,
 } from "@/lib/lodge-search";
 import { applyQuickPick, nightsInWords, partySize } from "@/lib/bed-planner";
-import { loadPlanner, type PlannerResult } from "@/lib/bed-planner-data";
+import { loadPlanner, plannerGroup, type PlannerResult } from "@/lib/bed-planner-data";
 import { SearchBar } from "@/components/book/search-form";
 import type { PlannerRow } from "@/components/book/bed-planner-grid";
 import { ChosenLodgePanel } from "@/components/book/chosen-lodge-panel";
@@ -63,9 +63,24 @@ function weekHref(params: RawSearchParams, from: string): string {
   return `/book?${url.toString()}#planner`;
 }
 
-/** The price of the stay, or "Ask the club" when it cannot be worked out (the panel says why). */
+/**
+ * The price of the stay; else "Ask the club" when it cannot be worked out (the
+ * panel says why); else "—" for a lodge with no booking page or email to ask.
+ */
 function stayText(r: PlannerResult): string {
-  return r.estimate.total !== null ? formatNzd(r.estimate.total) : "Ask the club";
+  if (r.estimate.total !== null) return formatNzd(r.estimate.total);
+  return r.lodge.reachable ? "Ask the club" : "—";
+}
+
+/** The search's own URL with every lodge shown (no JavaScript needed). */
+function allHref(params: RawSearchParams): string {
+  const url = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "all" || key === "unavailable" || value === undefined) continue;
+    for (const v of Array.isArray(value) ? value : [value]) url.append(key, v);
+  }
+  url.set("all", "1");
+  return `/book?${url.toString()}#planner`;
 }
 
 /** Under "Ask the club": how many beds the lodge has, when it has said. */
@@ -102,6 +117,7 @@ function Planner({
     stayFreeBeds: r.availability.stayFreeBeds,
     stayText: stayText(r),
     stayNote: stayNote(r),
+    hidden: plannerGroup(r) === 2,
     href: chooseHref(params, r.lodge.id),
   }));
   const stay = eachNight(query.checkIn, query.checkOut);
@@ -124,6 +140,10 @@ function Planner({
         caption={`Free beds, ${nightsInWords(nights)}`}
         panels={results.map((r) => ({ id: r.lodge.id, panel: <ChosenLodgePanel result={r} query={query} /> }))}
         initialId={pick?.lodge.id ?? null}
+        // Lodges with no booking page or email start hidden, unless asked for
+        // (`?all=1`) or the lodge named in the address is one of them.
+        initialShowAll={params.all === "1" || (pick !== undefined && plannerGroup(pick) === 2)}
+        showAllHref={allHref(params)}
         previousHref={previous ? weekHref(params, previous) : null}
         nextHref={next ? weekHref(params, next) : null}
       />

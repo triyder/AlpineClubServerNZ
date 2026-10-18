@@ -48,6 +48,8 @@ export interface PlannerRow {
   stayText: string;
   /** Small print under an unknown price: "32 beds in lodge". */
   stayNote?: string;
+  /** No booking page or email: listed last, behind "Display all lodges". */
+  hidden?: boolean;
   /** The search with this lodge chosen (the link without JavaScript). */
   href: string;
 }
@@ -142,6 +144,9 @@ export function BedPlannerGrid({
   panelRef,
   previousHref,
   nextHref,
+  showAll = true,
+  showAllHref,
+  onShowAll,
 }: {
   nights: string[];
   stayNights: ReadonlySet<string>;
@@ -151,7 +156,7 @@ export function BedPlannerGrid({
   chosenId: string | null;
   caption: string;
   /** Open or close a lodge in place; without it (or without JavaScript) the link navigates. */
-  onChoose?: (row: PlannerRow, event: MouseEvent<HTMLAnchorElement>) => void;
+  onChoose?: (row: PlannerRow, event: MouseEvent<HTMLElement>) => void;
   /** The open lodge's panel, shown in a row under it. */
   expanded?: ReactNode;
   /** The scroll box's visible width in px, so the panel fits it; unset before it is measured. */
@@ -161,8 +166,16 @@ export function BedPlannerGrid({
   /** The grid a week earlier and later (‹ ›); null where it cannot go. */
   previousHref?: string | null;
   nextHref?: string | null;
+  /** Whether the lodges with no booking page or email are shown. */
+  showAll?: boolean;
+  /** "Display all lodges": the link without JavaScript, and the handler with it. */
+  showAllHref?: string;
+  onShowAll?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const columns = nights.length + 2;
+  const hiddenCount = rows.filter((r) => r.hidden).length;
+  const shown = showAll ? rows : rows.filter((r) => !r.hidden);
+  const firstHidden = rows.find((r) => r.hidden)?.id;
   return (
     <div id="planner" className="scroll-mt-4 overflow-hidden rounded-xl border border-border bg-card">
       {/* The title, the key and the arrows, above the scroll box so they stay put on a phone. */}
@@ -208,16 +221,38 @@ export function BedPlannerGrid({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {shown.map((row) => {
               const chosen = row.id === chosenId;
               const panelId = `lodge-panel-${row.id}`;
               return (
                 <Fragment key={row.id}>
-                <tr className="border-t border-border">
+                {showAll && row.id === firstHidden ? (
+                  <tr className="border-t-2 border-border bg-muted/40">
+                    <th scope="rowgroup" colSpan={columns} className="sticky left-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">
+                      No booking page or email given
+                    </th>
+                  </tr>
+                ) : null}
+                {/* The whole row opens the lodge (owner, 18 Oct 2026); its name
+                    stays the link, for the keyboard and without JavaScript. */}
+                <tr
+                  data-lodge-row
+                  onClick={
+                    onChoose
+                      ? (event) => {
+                          // The name handles its own click (and Enter).
+                          if ((event.target as Element).closest("a, button")) return;
+                          onChoose(row, event);
+                        }
+                      : undefined
+                  }
+                  className={cn("group border-t border-border", onChoose && "cursor-pointer hover:bg-muted")}
+                >
                   <th
                     scope="row"
                     className={cn(
                       "sticky left-0 z-10 bg-card px-4 py-3 text-left font-semibold",
+                      onChoose && "group-hover:bg-muted",
                       chosen && "shadow-[inset_4px_0_0_var(--primary)]",
                     )}
                   >
@@ -273,6 +308,22 @@ export function BedPlannerGrid({
                 </Fragment>
               );
             })}
+            {!showAll && hiddenCount > 0 ? (
+              <tr className="border-t border-border">
+                <td colSpan={columns} className="sticky left-0 px-4 py-3">
+                  <a
+                    href={showAllHref ?? "#"}
+                    onClick={onShowAll}
+                    className="font-semibold text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Display all lodges
+                  </a>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {hiddenCount} more with no booking page or email
+                  </span>
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
