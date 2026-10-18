@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Search } from "lucide-react";
@@ -65,13 +66,49 @@ export default async function HomePage() {
     <div className="min-h-screen bg-background">
       <PublicHeader />
       <main>
-        <section className={`${PINE} text-white`}>
+        {/* Mueller Hut at sunrise behind the banner (owner, 18 Oct 2026), under a
+            see-through pine tint that is solid where the text sits. The photo
+            is decorative (empty alt); its credit, which the licence requires,
+            is in the corner. By path, not imported: CI typechecks without
+            Next's generated image declarations. */}
+        <section
+          className={`${PINE} relative isolate overflow-hidden text-white`}
+        >
+          <Image
+            src="/images/mueller-hut-aoraki.jpg"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="-z-20 object-cover object-[72%_center]"
+          />
+          <div
+            aria-hidden
+            className="absolute inset-0 -z-10 bg-gradient-to-r from-[#1F4D34]/90 via-[#1F4D34]/65 to-[#1F4D34]/35"
+          />
+          <p className="absolute bottom-2 right-3 text-[0.65rem] text-white/80">
+            Photo:{" "}
+            <a
+              href="https://commons.wikimedia.org/wiki/File:Mueller_Hut_with_Mt_Sefton_and_Aoraki_(Mt_Cook)_during_the_sunrise.jpg"
+              className="underline"
+            >
+              Mueller Hut, Mt Sefton and Aoraki
+            </a>
+            , Michal Klajban,{" "}
+            <a
+              href="https://creativecommons.org/licenses/by-sa/4.0/"
+              className="underline"
+            >
+              CC BY-SA 4.0
+            </a>
+            , cropped and tinted
+          </p>
           <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 pb-16 pt-14 sm:px-6 sm:pb-20">
             <p className="self-start rounded bg-[#C2410C] px-3 py-1 text-sm font-bold uppercase tracking-wider">
               Club lodges · Non-member rates
             </p>
             <h1 className="max-w-4xl text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-6xl">
-              Stay at a club lodge in the mountains
+              Stay at a lodge in the mountains
             </h1>
             <p className="max-w-2xl text-lg text-[#DCE8DF] sm:text-xl">
               Search lodges run by New Zealand alpine and tramping clubs,
@@ -107,9 +144,7 @@ export default async function HomePage() {
                     key={g.key}
                     className="space-y-1.5 text-sm font-semibold"
                   >
-                    <span className="block">
-                      {guestFieldLabel(g)}
-                    </span>
+                    <span className="block">{guestFieldLabel(g)}</span>
                     <input
                       name={g.key}
                       type="number"
@@ -130,7 +165,10 @@ export default async function HomePage() {
                 </button>
               </div>
 
-              <LeaveFollowsArrive arriveId="home-checkIn" leaveId="home-checkOut" />
+              <LeaveFollowsArrive
+                arriveId="home-checkIn"
+                leaveId="home-checkOut"
+              />
               {picks.length > 0 ? (
                 <div
                   role="group"
