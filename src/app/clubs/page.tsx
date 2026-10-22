@@ -13,6 +13,7 @@ import {
   approveClubAction,
   rejectClubAction,
   revokeTokenAction,
+  deleteRevokedTokenAction,
 } from "./actions";
 import {
   Card,
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import type { ClubStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -193,6 +195,22 @@ export default async function ClubsPage() {
                                     >
                                       Revoke
                                     </Button>
+                                  </form>
+                                ) : null}
+                                {canManage && t.revokedAt ? (
+                                  <form action={deleteRevokedTokenAction}>
+                                    <input
+                                      type="hidden"
+                                      name="tokenId"
+                                      value={t.id}
+                                    />
+                                    <ConfirmSubmitButton
+                                      size="sm"
+                                      variant="ghost"
+                                      message={`Delete the revoked key ${t.tokenPrefix}… for good? Its audit history is kept; the row is not.`}
+                                    >
+                                      Delete
+                                    </ConfirmSubmitButton>
                                   </form>
                                 ) : null}
                               </div>
