@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
@@ -77,11 +78,19 @@ export default async function ClubsPage() {
   return (
     <ConsoleShell session={session}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Clubs &amp; lodges</h1>
-          <p className="text-muted-foreground">
-            Review link applications, approve or reject, and issue API keys.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Connections</h1>
+            <p className="text-muted-foreground">
+              The clubs linked to this server: review link applications, approve
+              or reject, and issue API keys.
+            </p>
+          </div>
+          {/* Registering a lodge is an administrator's action (#32): it lives
+              here, first, rather than in the guest header. */}
+          <Button asChild variant="outline">
+            <Link href="/register">Register a lodge</Link>
+          </Button>
         </div>
 
         {clubs.length === 0 ? (

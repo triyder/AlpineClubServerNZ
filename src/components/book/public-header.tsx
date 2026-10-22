@@ -3,7 +3,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * The public pages' header (#25): the name, and links to the bed planner and
- * the club pages. Leaves room on the right for the fixed theme toggle
+ * the admin sign-in. Registering a lodge is an administrator's action and is
+ * reached from the console's Connections page (#32), not from here; the
+ * `/register` page itself stays public for a club following its site's link. Leaves room on the right for the fixed theme toggle
  * (`PublicThemeCorner`).
  */
 
@@ -11,7 +13,6 @@ export const PUBLIC_SITE_NAME = "Alpine Club Lodges NZ";
 
 const LINKS = [
   { key: "book", href: "/book", label: "Bed planner" },
-  { key: "register", href: "/register", label: "Register a lodge" },
   { key: "login", href: "/login", label: "Admin sign in" },
 ] as const;
 
