@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TokenReveal } from "@/components/token-reveal";
 
 /**
  * Client island for issuing a new API key to an approved club. On success it
@@ -16,7 +17,6 @@ export function TokenGenerator({ clubId }: { clubId: string }) {
   const [plaintext, setPlaintext] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   async function generate() {
     setPending(true);
@@ -42,31 +42,7 @@ export function TokenGenerator({ clubId }: { clubId: string }) {
   }
 
   if (plaintext) {
-    return (
-      <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3">
-        <p className="text-xs font-medium text-warning">
-          Copy this token now — it will not be shown again.
-        </p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 overflow-x-auto rounded bg-background px-2 py-1 text-xs">
-            {plaintext}
-          </code>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              void navigator.clipboard.writeText(plaintext);
-              setCopied(true);
-            }}
-          >
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-        <Button size="sm" variant="ghost" onClick={() => setPlaintext(null)}>
-          Done
-        </Button>
-      </div>
-    );
+    return <TokenReveal plaintext={plaintext} onDone={() => setPlaintext(null)} />;
   }
 
   return (
