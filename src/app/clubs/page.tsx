@@ -138,6 +138,27 @@ export default async function ClubsPage() {
                     </div>
                   ) : null}
 
+                  {/* #40: what the club asked for when it registered. Shown
+                      while pending (the approval assigns it) and kept afterwards
+                      as the record of the request. */}
+                  {club.requestedLodgeIds.length > 0 || club.registrationNotes ? (
+                    <div className="space-y-1 text-sm">
+                      {club.requestedLodgeIds.length > 0 ? (
+                        <p>
+                          <span className="font-medium">Lodges requested at registration:</span>{" "}
+                          {club.requestedLodgeIds
+                            .map((id) => lodgeOptions.find((l) => l.id === id)?.name ?? "(a lodge since removed)")
+                            .join(", ")}
+                        </p>
+                      ) : null}
+                      {club.registrationNotes ? (
+                        <p className="whitespace-pre-line text-muted-foreground">
+                          <span className="font-medium text-foreground">Note:</span> {club.registrationNotes}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {club.status === "APPROVED" ? (
                     <ClubApiVersion
                       reported={club.lastReportedApiVersion}

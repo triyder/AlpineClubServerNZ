@@ -100,3 +100,44 @@ export async function assignClubLodges(
     throw error;
   }
 }
+
+export interface RequestedLodgesOutcome {
+  /** Names assigned to the club. */
+  assigned: string[];
+  /** Requested lodges that could not be assigned, and why. */
+  skipped: Array<{ name: string; reason: "owned" | "missing" | "changed"; club?: string | null }>;
+}
+
+/**
+ * On approval (#40), assign the lodges the club asked for at registration:
+ * those that still exist, are live and are free. A lodge taken in the
+ * meantime is skipped and reported rather than failing the approval, which
+ * is the one difference from the administrator's own all-or-nothing save.
+ */
+export async function assignRequestedLodgesOnApproval(
+  clubId: string,
+  requestedIds: string[],
+): Promise<RequestedLodgesOutcome> {
+  const ids = [...new Set(requestedIds)];
+  if (ids.length === 0) return { assigned: [], skipped: [] };
+  const rows = await prisma.otherLodge.findMany({
+    where: { id: { in: ids }, ...liveOtherLodgeWhere },
+    select: { id: true, name: true, sourceClubId: true, sourceClub: { select: { name: true } } },
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const skipped: RequestedLodgesOutcome["skipped"] = [];
+  const free: string[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) skipped.push({ name: id, reason: "missing" });
+    else if (row.sourceClubId !== null && row.sourceClubId !== clubId)
+      skipped.push({ name: row.name, reason: "owned", club: row.sourceClub?.name ?? null });
+    else free.push(id);
+  }
+  if (free.length === 0) return { assigned: [], skipped };
+  const result = await assignClubLodges(clubId, free);
+  if (result.ok) return { assigned: result.added, skipped };
+  // A claim raced between the read and the write: report, do not retry.
+  for (const id of free) skipped.push({ name: byId.get(id)?.name ?? id, reason: "changed" });
+  return { assigned: [], skipped };
+}

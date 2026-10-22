@@ -5,13 +5,23 @@ const deleteMany = vi.fn();
 const recordAudit = vi.fn();
 const requireManager = vi.fn();
 const revalidatePath = vi.fn();
+const clubFindUnique = vi.fn();
+const clubUpdateMany = vi.fn();
+const assignRequested = vi.fn();
 vi.mock("@/lib/db", () => ({
   prisma: {
     apiToken: {
       findUnique: (...a: unknown[]) => findUnique(...a),
       deleteMany: (...a: unknown[]) => deleteMany(...a),
     },
+    club: {
+      findUnique: (...a: unknown[]) => clubFindUnique(...a),
+      updateMany: (...a: unknown[]) => clubUpdateMany(...a),
+    },
   },
+}));
+vi.mock("@/lib/club-lodges", () => ({
+  assignRequestedLodgesOnApproval: (...a: unknown[]) => assignRequested(...a),
 }));
 vi.mock("@/lib/audit", () => ({
   recordAudit: (...a: unknown[]) => recordAudit(...a),
@@ -23,7 +33,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: (...a: unknown[]) => revalidatePath(...a),
 }));
 
-import { deleteRevokedTokenAction } from "../actions";
+import { approveClubAction, deleteRevokedTokenAction, rejectClubAction } from "../actions";
 
 function form(tokenId: string): FormData {
   const fd = new FormData();
@@ -102,5 +112,61 @@ describe("deleteRevokedTokenAction (#31)", () => {
     await expect(deleteRevokedTokenAction(form("tok-1"))).rejects.toThrow("Not authorized");
     expect(findUnique).not.toHaveBeenCalled();
     expect(deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("approveClubAction (#40): approval assigns the lodges requested at registration", () => {
+  beforeEach(() => {
+    clubFindUnique.mockReset();
+    clubUpdateMany.mockReset();
+    assignRequested.mockReset();
+    recordAudit.mockReset();
+    revalidatePath.mockReset();
+    requireManager.mockReset();
+    requireManager.mockResolvedValue({ userId: "user-1", role: "MANAGER" });
+    clubUpdateMany.mockResolvedValue({ count: 1 });
+  });
+
+  function clubForm(): FormData {
+    const fd = new FormData();
+    fd.set("clubId", "club-1");
+    return fd;
+  }
+
+  it("assigns the requested lodges after the status flips, and records what was assigned and skipped", async () => {
+    clubFindUnique.mockResolvedValue({ requestedLodgeIds: ["lodge-a", "lodge-b"] });
+    assignRequested.mockResolvedValue({ assigned: ["Alpha"], skipped: [{ name: "Beta", reason: "owned", club: "Other" }] });
+
+    await approveClubAction(clubForm());
+
+    expect(clubUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "club-1", status: "PENDING" } }),
+    );
+    expect(assignRequested).toHaveBeenCalledWith("club-1", ["lodge-a", "lodge-b"]);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "club.approve",
+        metadata: expect.objectContaining({
+          lodgesAssigned: ["Alpha"],
+          lodgesSkipped: [{ name: "Beta", reason: "owned", club: "Other" }],
+        }),
+      }),
+    );
+  });
+
+  it("assigns nothing when nothing was requested, on a rejection, or when the club was already decided", async () => {
+    clubFindUnique.mockResolvedValue({ requestedLodgeIds: [] });
+    await approveClubAction(clubForm());
+    expect(assignRequested).not.toHaveBeenCalled();
+
+    clubFindUnique.mockResolvedValue({ requestedLodgeIds: ["lodge-a"] });
+    await rejectClubAction(clubForm());
+    expect(assignRequested).not.toHaveBeenCalled();
+
+    clubUpdateMany.mockResolvedValue({ count: 0 });
+    recordAudit.mockClear();
+    await approveClubAction(clubForm());
+    expect(assignRequested).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });

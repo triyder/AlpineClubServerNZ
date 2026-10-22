@@ -15,9 +15,12 @@ vi.mock("@/lib/audit", () => ({
 
 import { registerAction } from "../actions";
 
-function form(fields: Record<string, string>): FormData {
+function form(fields: Record<string, string | string[]>): FormData {
   const fd = new FormData();
-  for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  for (const [k, v] of Object.entries(fields)) {
+    if (Array.isArray(v)) for (const item of v) fd.append(k, item);
+    else fd.set(k, v);
+  }
   return fd;
 }
 
@@ -63,6 +66,23 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
     );
   });
 
+  it("passes every ticked lodge and the note through to the write (#40), and none when none was ticked", async () => {
+    registerClub.mockResolvedValue({
+      ok: true,
+      created: true,
+      club: { id: "club-1", code: "RUAPEHU", status: "PENDING" },
+    });
+
+    await registerAction({}, form({ ...VALID, lodgeIds: ["lodge-a", "lodge-b"], notes: " not listed: Tukino " }));
+    expect(registerClub).toHaveBeenLastCalledWith(
+      expect.objectContaining({ lodgeIds: ["lodge-a", "lodge-b"], notes: "not listed: Tukino" }),
+    );
+
+    await registerAction({}, form(VALID));
+    expect(registerClub).toHaveBeenLastCalledWith(
+      expect.objectContaining({ lodgeIds: [], notes: undefined }),
+    );
+  });
   it("issues NO key when the code already belongs to a club, so a code alone cannot mint one", async () => {
     registerClub.mockResolvedValue({
       ok: true,

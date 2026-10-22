@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireManager } from "@/lib/admin-guard";
 import { recordAudit } from "@/lib/audit";
+import { assignRequestedLodgesOnApproval, type RequestedLodgesOutcome } from "@/lib/club-lodges";
 
 async function setStatus(
   clubId: string,
@@ -23,10 +24,25 @@ async function setStatus(
   });
 
   if (updated.count > 0) {
+    // #40: an approval assigns the lodges the club asked for at registration,
+    // skipping (and recording) any taken in the meantime.
+    let lodges: RequestedLodgesOutcome | null = null;
+    if (status === "APPROVED") {
+      const club = await prisma.club.findUnique({
+        where: { id: clubId },
+        select: { requestedLodgeIds: true },
+      });
+      if (club && club.requestedLodgeIds.length > 0) {
+        lodges = await assignRequestedLodgesOnApproval(clubId, club.requestedLodgeIds);
+      }
+    }
     await recordAudit({
       action: status === "APPROVED" ? "club.approve" : "club.reject",
       clubId,
-      metadata: { reviewerId: session.userId },
+      metadata: {
+        reviewerId: session.userId,
+        ...(lodges ? { lodgesAssigned: lodges.assigned, lodgesSkipped: lodges.skipped } : {}),
+      },
     });
   }
 
