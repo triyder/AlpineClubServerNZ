@@ -32,7 +32,7 @@ const POST_SETTINGS = [
 // Scheduled jobs whose single-flight claim row must exist. The guarded
 // `updateMany` that takes the claim matches nothing when the row is absent, so
 // a missing row reads as "permanently held" and the job would never run.
-const JOB_CLAIMS = ["posts.cleanup"];
+const JOB_CLAIMS = ["posts.cleanup", "digest.admin"];
 
 async function seedPortalDefaults() {
   // `create`-only: never overwrite a value an operator has changed in the

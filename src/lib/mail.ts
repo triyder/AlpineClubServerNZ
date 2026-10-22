@@ -23,6 +23,8 @@ export const MAIL_SETTING_KEYS = {
   password: "smtp.password",
   fromAddress: "smtp.from_address",
   fromName: "smtp.from_name",
+  /** Where the administrator digest goes (#34); empty = every ADMIN user. */
+  digestTo: "smtp.digest_to",
 } as const;
 
 /** How the connection is secured. `tls` = implicit TLS (usually 465). */
@@ -38,6 +40,7 @@ export interface MailSettingsView {
   passwordSet: boolean;
   fromAddress: string;
   fromName: string;
+  digestTo: string;
 }
 
 export const MAIL_SETTINGS_DEFAULTS: MailSettingsView = {
@@ -48,6 +51,7 @@ export const MAIL_SETTINGS_DEFAULTS: MailSettingsView = {
   passwordSet: false,
   fromAddress: "",
   fromName: "",
+  digestTo: "",
 };
 
 /**
@@ -62,6 +66,7 @@ export const mailSettingsInputSchema = z.object({
   password: z.string().max(1024).optional(),
   fromAddress: z.string().trim().email().max(320).or(z.literal("")),
   fromName: z.string().trim().max(120),
+  digestTo: z.string().trim().email().max(320).or(z.literal("")).default(""),
 });
 export type MailSettingsInput = z.infer<typeof mailSettingsInputSchema>;
 
@@ -86,6 +91,7 @@ function viewFrom(byKey: Map<string, string>): MailSettingsView {
     passwordSet: Boolean(byKey.get(MAIL_SETTING_KEYS.password)),
     fromAddress: byKey.get(MAIL_SETTING_KEYS.fromAddress) ?? "",
     fromName: byKey.get(MAIL_SETTING_KEYS.fromName) ?? "",
+    digestTo: byKey.get(MAIL_SETTING_KEYS.digestTo) ?? "",
   };
 }
 
@@ -114,6 +120,7 @@ export async function saveMailSettings(input: MailSettingsInput): Promise<MailSe
     [MAIL_SETTING_KEYS.user, input.user],
     [MAIL_SETTING_KEYS.fromAddress, input.fromAddress],
     [MAIL_SETTING_KEYS.fromName, input.fromName],
+    [MAIL_SETTING_KEYS.digestTo, input.digestTo],
   ];
   if (input.password) {
     if (!secretBoxAvailable()) {

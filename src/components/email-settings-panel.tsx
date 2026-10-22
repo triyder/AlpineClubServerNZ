@@ -167,6 +167,16 @@ export function EmailSettingsPanel({
               onChange={(e) => set({ fromName: e.target.value })}
             />
           </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="smtp-digest-to">Send the administrator digest to</Label>
+            <Input
+              id="smtp-digest-to"
+              type="email"
+              value={settings.digestTo}
+              placeholder="Leave empty to send it to every administrator"
+              onChange={(e) => set({ digestTo: e.target.value })}
+            />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={save} disabled={saving}>

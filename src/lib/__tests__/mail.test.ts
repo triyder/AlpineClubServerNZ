@@ -72,6 +72,7 @@ describe("mail settings (#33)", () => {
       passwordSet: true,
       fromAddress: "server@example.nz",
       fromName: "Server",
+      digestTo: "",
     });
     expect(JSON.stringify(view)).not.toContain("hunter2");
   });
@@ -96,6 +97,7 @@ describe("mail settings (#33)", () => {
       password: "hunter2",
       fromAddress: "server@example.nz",
       fromName: "",
+      digestTo: "",
     });
     const writes = upsert.mock.calls.map(([args]) => (args as { create: { key: string; value: string } }).create);
     const pw = writes.find((w) => w.key === "smtp.password");
@@ -110,6 +112,7 @@ describe("mail settings (#33)", () => {
       user: "u",
       fromAddress: "server@example.nz",
       fromName: "",
+      digestTo: "",
     });
     const keys = upsert.mock.calls.map(([args]) => (args as { where: { key: string } }).where.key);
     expect(keys).not.toContain("smtp.password");
@@ -126,6 +129,7 @@ describe("mail settings (#33)", () => {
         password: "hunter2",
         fromAddress: "server@example.nz",
         fromName: "",
+        digestTo: "",
       }),
     ).rejects.toThrow(MailSettingsError);
     expect(upsert).not.toHaveBeenCalled();

@@ -67,6 +67,9 @@ services:
       # Encrypts the SMTP password an administrator saves under Settings (#33).
       # >= 32 characters; unset, no password can be saved.
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+      # Presented by the host's cron to POST /api/jobs/digest (#34). >= 32
+      # characters; unset, the endpoint refuses everyone.
+      JOB_SECRET: ${JOB_SECRET:-}
       # Private addresses club installs may be reached at (the reverse proxy on
       # this server's own network), comma-separated IP literals. Empty = none.
       ALLOWED_PRIVATE_CLUB_ADDRESSES: ${ALLOWED_PRIVATE_CLUB_ADDRESSES:-}

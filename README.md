@@ -90,6 +90,7 @@ Two settings decide whether it works at all:
 
 - **`PUSH_SIGNING_KEY`** (>= 32 characters) must reach the app container.
 - **`SETTINGS_ENCRYPTION_KEY`** (>= 32 characters) encrypts the SMTP password saved under Settings → Email (#33); without it no password can be saved. Changing it means re-entering the password.
+- **`JOB_SECRET`** (>= 32 characters) is what the host's cron presents to `POST /api/jobs/digest` as `x-job-secret` (#34). The administrator digest — new connection requests, reviews, keys issued or revoked, sync issues opened — is sent by that call, once per period (a watermark in `system_settings`), only when there is something new, to the address under Settings → Email or to every ADMIN user. Example crontab: `15 7 * * * curl -fsS -X POST -H "x-job-secret: $JOB_SECRET" https://alpine-server.example.nz/api/jobs/digest`.
   Without it no club can register a push target, so no club has the address or
   the secret to be asked with. `docker-compose.yml` passes it from `.env`.
 - **`ALLOWED_PRIVATE_CLUB_ADDRESSES`** names the private address(es) club sites
