@@ -37,6 +37,8 @@ const LEVELS: Record<string, "manager" | "admin"> = {
   "POST posts/[id]/unhide": "admin",
   "POST settings/cleanup": "admin",
   "PUT settings": "admin",
+  "PUT settings/email": "admin",
+  "POST settings/email/test": "admin",
 };
 
 /** The only handler that takes a multipart body (the image upload). */

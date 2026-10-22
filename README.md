@@ -89,6 +89,7 @@ the club's own lodge by its permanent id (`ownLodges` in the 2.2 pull).
 Two settings decide whether it works at all:
 
 - **`PUSH_SIGNING_KEY`** (>= 32 characters) must reach the app container.
+- **`SETTINGS_ENCRYPTION_KEY`** (>= 32 characters) encrypts the SMTP password saved under Settings → Email (#33); without it no password can be saved. Changing it means re-entering the password.
   Without it no club can register a push target, so no club has the address or
   the secret to be asked with. `docker-compose.yml` passes it from `.env`.
 - **`ALLOWED_PRIVATE_CLUB_ADDRESSES`** names the private address(es) club sites
