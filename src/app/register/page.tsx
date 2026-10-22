@@ -25,7 +25,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <PublicHeader current="register" />
+      <PublicHeader />
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
       <Card>
         <CardHeader>
