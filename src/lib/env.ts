@@ -28,6 +28,15 @@ export function sessionSecret(): string {
  * Null when unset or too short, in which case a secret cannot be saved and
  * the Settings page says so, rather than storing it in the clear.
  */
+/**
+ * The shared secret the host's cron presents to `POST /api/jobs/digest`
+ * (#34), as the `x-job-secret` header. At least 32 characters; null when
+ * unset or too short, in which case the endpoint answers 401 to everyone.
+ */
+export function jobSecret(): string | null {
+  const key = process.env.JOB_SECRET?.trim();
+  return key && key.length >= 32 ? key : null;
+}
 export function settingsEncryptionKey(): string | null {
   const key = process.env.SETTINGS_ENCRYPTION_KEY?.trim();
   return key && key.length >= 32 ? key : null;

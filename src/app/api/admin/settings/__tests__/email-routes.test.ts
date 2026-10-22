@@ -34,6 +34,7 @@ const VIEW = {
   passwordSet: true,
   fromAddress: "server@example.nz",
   fromName: "",
+  digestTo: "",
 };
 const put = (body: unknown) =>
   new Request("https://s/api/admin/settings/email", {
