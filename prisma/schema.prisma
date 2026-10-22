@@ -107,6 +107,12 @@ model Club {
   reviewedBy   User?     @relation("ClubReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt   DateTime? @map("reviewed_at")
 
+  // What the club asked for when it registered (#40): the lodges it says it
+  // is, and a note for the administrator. REQUESTED, not owned: ownership is
+  // OtherLodge.sourceClubId, assigned on approval.
+  requestedLodgeIds String[] @default([]) @map("requested_lodge_ids")
+  registrationNotes String?  @map("registration_notes") @db.VarChar(500)
+
   apiTokens            ApiToken[]
   auditLogs            AuditLog[]
   // "Other lodges" this club uploaded to the central registry (provenance).

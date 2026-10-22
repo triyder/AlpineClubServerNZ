@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma, type Club } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { ClubRegisterInput } from "@/lib/validation";
+import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 
 export type RegisterClubResult =
   | { ok: true; club: Club; created: boolean }
@@ -17,13 +18,28 @@ export type RegisterClubResult =
  * details by re-registering its code.
  */
 export async function registerClub(
-  input: ClubRegisterInput,
+  input: ClubRegisterInput & { lodgeIds?: string[]; notes?: string },
 ): Promise<RegisterClubResult> {
   const code = input.code.trim();
   const existing = await prisma.club.findUnique({ where: { code } });
   if (existing) {
     return { ok: true, club: existing, created: false };
   }
+
+  // #40: keep only the requested lodges that exist, are live and are free. A
+  // registrant cannot ask for a lodge another club owns (the picker greys it
+  // out; this is what makes a hand-built request unable to either), and an
+  // id that is not a lodge is dropped rather than failing the registration.
+  const lodgeIds = input.lodgeIds ?? [];
+  const requestedLodgeIds =
+    lodgeIds.length === 0
+      ? []
+      : (
+          await prisma.otherLodge.findMany({
+            where: { id: { in: [...new Set(lodgeIds)] }, sourceClubId: null, ...liveOtherLodgeWhere },
+            select: { id: true },
+          })
+        ).map((l) => l.id);
 
   try {
     const club = await prisma.club.create({
@@ -33,6 +49,8 @@ export async function registerClub(
         location: input.location?.trim() || null,
         contactEmail: input.contactEmail.toLowerCase().trim(),
         status: "PENDING",
+        requestedLodgeIds,
+        registrationNotes: input.notes?.trim() || null,
       },
     });
     return { ok: true, club, created: true };

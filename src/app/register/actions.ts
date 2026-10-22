@@ -1,6 +1,6 @@
 "use server";
 
-import { clubRegisterSchema } from "@/lib/validation";
+import { clubRegisterFormSchema } from "@/lib/validation";
 import { registerClub } from "@/lib/clubs";
 import { recordAudit } from "@/lib/audit";
 import { issueClubToken } from "@/lib/issue-club-token";
@@ -24,11 +24,13 @@ export async function registerAction(
   _prev: RegisterState,
   formData: FormData,
 ): Promise<RegisterState> {
-  const parsed = clubRegisterSchema.safeParse({
+  const parsed = clubRegisterFormSchema.safeParse({
     name: String(formData.get("name") ?? "").trim(),
     code: String(formData.get("code") ?? "").trim(),
     location: String(formData.get("location") ?? "").trim() || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "").trim(),
+    lodgeIds: formData.getAll("lodgeIds").map(String),
+    notes: String(formData.get("notes") ?? "").trim() || undefined,
   });
 
   if (!parsed.success) {

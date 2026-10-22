@@ -19,6 +19,19 @@ export const clubRegisterSchema = z.object({
 });
 export type ClubRegisterInput = z.infer<typeof clubRegisterSchema>;
 
+/**
+ * The web form's registration (#40): the API contract's fields plus the
+ * lodges the club says it is (optional) and a note for the administrator.
+ * Kept apart from `clubRegisterSchema` on purpose: that one is part of the
+ * /api/v1 contract fingerprint, and widening it would demand a version bump
+ * that pauses every connected club's sync for a form-only addition.
+ */
+export const clubRegisterFormSchema = clubRegisterSchema.extend({
+  lodgeIds: z.array(z.string().min(1).max(64)).max(20).default([]),
+  notes: z.string().trim().max(500).optional(),
+});
+export type ClubRegisterFormInput = z.infer<typeof clubRegisterFormSchema>;
+
 /** Payload a client booking engine sends to the sync endpoint. */
 export const syncSchema = z.object({
   // Monotonic cursor the client last successfully processed, if any.
