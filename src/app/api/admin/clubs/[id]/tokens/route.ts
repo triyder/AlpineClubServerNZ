@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { guardAdminWrite } from "@/lib/admin-guard";
-import { generateApiToken } from "@/lib/api-tokens";
+import { issueClubToken } from "@/lib/issue-club-token";
 import { createTokenSchema } from "@/lib/validation";
-import { recordAudit } from "@/lib/audit";
 
 /**
  * POST /api/admin/clubs/:id/tokens
  *
- * Admin/Manager-only. Generates a new API key for an APPROVED club. The
- * plaintext token is returned ONCE in the response body and never persisted —
- * only its hash and non-secret prefix are stored.
+ * Admin/Manager-only. Generates a new API key for an APPROVED club through
+ * `issueClubToken` (#30, the one issuer registration also uses). The plaintext
+ * is returned ONCE in the response body and never persisted.
  */
 export async function POST(
   req: Request,
@@ -40,33 +39,13 @@ export async function POST(
     return NextResponse.json({ error: "Invalid token request" }, { status: 400 });
   }
 
-  const generated = generateApiToken();
-  const token = await prisma.apiToken.create({
-    data: {
-      clubId: club.id,
-      name: parsed.data.name,
-      tokenHash: generated.hash,
-      tokenPrefix: generated.prefix,
-      scopes: parsed.data.scopes,
-    },
-  });
-
-  await recordAudit({
-    action: "token.generate",
+  const issued = await issueClubToken({
     clubId: club.id,
-    tokenId: token.id,
-    metadata: { name: token.name, scopes: token.scopes },
+    name: parsed.data.name,
+    scopes: parsed.data.scopes,
+    source: "admin",
   });
 
   // `plaintext` is shown to the operator exactly once here.
-  return NextResponse.json(
-    {
-      id: token.id,
-      name: token.name,
-      prefix: token.tokenPrefix,
-      scopes: token.scopes,
-      plaintext: generated.plaintext,
-    },
-    { status: 201 },
-  );
+  return NextResponse.json(issued, { status: 201 });
 }

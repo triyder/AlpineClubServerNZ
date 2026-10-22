@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { PublicHeader } from "@/components/book/public-header";
+import { TokenReveal } from "@/components/token-reveal";
 import { registerAction, type RegisterState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,18 +33,36 @@ export default function RegisterPage() {
           <CardTitle className="text-2xl">Register a lodge</CardTitle>
           <CardDescription>
             Submit your lodge details to request a connection to the central
-            server. An administrator will review and, once approved, issue an
-            API key for your AlpineClubBookingsNZ installation.
+            server. You will be given your API key straight away to paste
+            into your AlpineClubBookingsNZ site; it starts working once an
+            administrator approves the connection.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {state.success ? (
             <div className="space-y-4 text-center">
-              <p className="text-sm">
-                Thanks — your registration was received and is now{" "}
-                <strong>pending review</strong>. You&apos;ll be contacted at the
-                email you provided once it&apos;s approved.
-              </p>
+              {state.apiKey ? (
+                <>
+                  <p className="text-sm">
+                    Thanks — your registration was received and is now{" "}
+                    <strong>pending review</strong>. This is your site&apos;s API
+                    key:
+                  </p>
+                  <div className="text-left">
+                    <TokenReveal
+                      plaintext={state.apiKey}
+                      instruction="Paste this into your site's Alpine Central Server page, then press Download. It starts working once an administrator approves the connection. If it is lost, the administrator can issue a new one from Connections."
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm">
+                  Thanks — this lodge is already registered and its connection is
+                  handled by the central server&apos;s administrator. You&apos;ll be
+                  contacted at the email you provided; a new API key can be issued
+                  from Connections if yours is lost.
+                </p>
+              )}
               <Button asChild variant="outline" className="w-full">
                 <Link href="/">Back to home</Link>
               </Button>

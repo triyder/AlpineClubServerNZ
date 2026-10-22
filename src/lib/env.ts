@@ -22,6 +22,25 @@ export function sessionSecret(): string {
  * plain-HTTP local dev browsing, otherwise the browser drops the cookie over
  * HTTP and login silently fails. Never set it false on a real deployment.
  */
+/**
+ * The key the few secrets typed into Settings are encrypted with at rest
+ * (#33: the SMTP password). At least 32 characters; `openssl rand -hex 32`.
+ * Null when unset or too short, in which case a secret cannot be saved and
+ * the Settings page says so, rather than storing it in the clear.
+ */
+/**
+ * The shared secret the host's cron presents to `POST /api/jobs/digest`
+ * (#34), as the `x-job-secret` header. At least 32 characters; null when
+ * unset or too short, in which case the endpoint answers 401 to everyone.
+ */
+export function jobSecret(): string | null {
+  const key = process.env.JOB_SECRET?.trim();
+  return key && key.length >= 32 ? key : null;
+}
+export function settingsEncryptionKey(): string | null {
+  const key = process.env.SETTINGS_ENCRYPTION_KEY?.trim();
+  return key && key.length >= 32 ? key : null;
+}
 export function sessionCookieSecure(): boolean {
   const override = process.env.SESSION_COOKIE_SECURE?.toLowerCase();
   if (override === "false" || override === "0") return false;
