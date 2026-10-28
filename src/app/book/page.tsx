@@ -211,18 +211,22 @@ export default async function BookPage({
       {/* The planner's heading and search over a faded photo of Whakapapa in
           snow (owner, 18 Oct 2026). The photo is decorative (empty alt); its
           credit, which the licence requires, is in the corner. */}
-      <section className="relative isolate overflow-hidden">
-        <Image
-          // By path, not imported: a typecheck without Next's generated image
-          // declarations (CI runs it before any build) cannot resolve a .jpg import.
-          src="/images/whakapapa-ski-field.jpg"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="-z-20 object-cover object-[center_35%] opacity-95"
-        />
-        <div aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-background/25 to-background" />
+      {/* Only the photo is clipped, not the section: the search bar's Amenities
+          drop-down hangs below the section, over the results (z-10). */}
+      <section className="relative isolate z-10">
+        <div aria-hidden className="absolute inset-0 -z-10 overflow-hidden">
+          <Image
+            // By path, not imported: a typecheck without Next's generated image
+            // declarations (CI runs it before any build) cannot resolve a .jpg import.
+            src="/images/whakapapa-ski-field.jpg"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-[center_35%] opacity-95"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/25 to-background" />
+        </div>
         <div className="mx-auto max-w-6xl space-y-5 px-4 pb-8 pt-16 sm:px-6 sm:pt-24">
           <div className="max-w-2xl rounded-xl bg-background/70 p-4 backdrop-blur-sm">
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Bed planner</h1>
