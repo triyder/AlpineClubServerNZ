@@ -44,6 +44,20 @@ import { clubRegisterSchema, syncSchema } from "@/lib/validation";
  * is how a contract changes silently under clubs that think they match.
  */
 
+/**
+ * Further fingerprints a version is ALSO known by, when the fingerprint moved
+ * but the contract did not: a library writing the same schema differently.
+ * Each entry needs its reason. The recorded entry in
+ * `api-contract-fingerprints.json` stays untouched as the original record.
+ */
+const FINGERPRINT_ALIASES: Record<string, ReadonlyArray<string>> = {
+  // zod 4.4.3 -> 4.6.7 (security upgrade, Oct 2026). `toJSONSchema` now emits
+  // a rewritten email pattern (same addresses accepted, no ReDoS lookaheads)
+  // and a datetime pattern that requires seconds. Clubs send `toISOString()`,
+  // which always carries seconds, so no club request changes meaning.
+  "2.6": ["561b775c6c4d56d8d7995f332124332777b6689a21ea915c046399c682e186fe"],
+};
+
 const V1_ROOT = join(process.cwd(), "src", "app", "api", "v1");
 
 function routeFiles(dir: string): string[] {
@@ -191,11 +205,12 @@ describe("API contract fingerprint", () => {
 
   it("still matches the fingerprint recorded for the current version", () => {
     const recorded = (fingerprints as Record<string, string>)[SERVER_API_VERSION];
+    const known = [recorded, ...(FINGERPRINT_ALIASES[SERVER_API_VERSION] ?? [])];
     const current = currentContractFingerprint();
     expect(
-      current,
+      known,
       `A /api/v1 request or response shape changed without a version bump. Bump SERVER_API_VERSION and add "${current}" under the new version in api-contract-fingerprints.json. Do not overwrite the entry for ${SERVER_API_VERSION}.`,
-    ).toBe(recorded);
+    ).toContain(current);
   });
 
   it("covers the version route itself", () => {

@@ -1,7 +1,10 @@
 "use server";
 
+import { headers } from "next/headers";
 import { clubRegisterFormSchema } from "@/lib/validation";
-import { registerClub } from "@/lib/clubs";
+import { REGISTER_PER_WINDOW, REGISTER_WINDOW_MS, registerClub } from "@/lib/clubs";
+import { clientIpFromHeaders } from "@/lib/client-ip";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { issueClubToken } from "@/lib/issue-club-token";
 
@@ -37,6 +40,11 @@ export async function registerAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid submission." };
   }
 
+  const ip = clientIpFromHeaders(await headers()) ?? "unknown";
+  if (!checkRateLimit(`register:${ip}`, Date.now(), REGISTER_PER_WINDOW, REGISTER_WINDOW_MS).allowed) {
+    return { error: "Too many registrations from this address. Please try again in an hour." };
+  }
+
   const result = await registerClub(parsed.data);
   if (!result.ok) {
     return { error: result.error };
@@ -45,6 +53,7 @@ export async function registerAction(
   await recordAudit({
     action: "club.register",
     clubId: result.club.id,
+    ipAddress: ip,
     metadata: { code: result.club.code, created: result.created, source: "web" },
   });
 

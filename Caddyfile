@@ -6,6 +6,22 @@
 # `localhost` for local testing (Caddy serves a local CA cert) or a real
 # hostname in production (Caddy provisions a Let's Encrypt certificate).
 # ---------------------------------------------------------------------------
+{
+	servers {
+		# The proxy in front of Caddy, if any (Nginx Proxy Manager on the home
+		# LAN: TRUSTED_PROXIES=192.168.1.101). Only a request from one of these
+		# may name the client's address in X-Forwarded-For; from anyone else the
+		# header is ignored and the connection's own address is the client.
+		# Without this, every visitor arrives as the proxy's address and shares
+		# one rate-limit bucket. The default trusts nothing but loopback.
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+		# Read X-Forwarded-For right to left, skipping trusted proxies: NPM
+		# APPENDS the real address, so the left-most entry is whatever the
+		# visitor chose to send.
+		trusted_proxies_strict
+	}
+}
+
 {$DOMAIN} {
 	encode gzip zstd
 
@@ -28,9 +44,11 @@
 
 	# All traffic is proxied to the Node app. Caddy terminates TLS and speaks
 	# plain HTTP to the app over the internal docker network.
+	# {client_ip} is the visitor's address as resolved through trusted_proxies
+	# above; the app keys its rate limits and audit log on it.
 	reverse_proxy app:3000 {
-		header_up X-Real-IP {remote_host}
-		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {client_ip}
+		header_up X-Forwarded-For {client_ip}
 		header_up X-Forwarded-Proto {scheme}
 	}
 

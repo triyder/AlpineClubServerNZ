@@ -71,7 +71,16 @@ async function main() {
   }
 
   const email = process.env.SEED_ADMIN_EMAIL ?? "admin@alpineclub.nz";
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
+  const password = process.env.SEED_ADMIN_PASSWORD?.trim() || "ChangeMe123!";
+
+  // In production the first admin is an internet-facing account: never create
+  // it with the password printed in this repository. Only reached on a fresh
+  // database (an existing admin returns above), so a running site is unaffected.
+  if (process.env.NODE_ENV === "production" && (password === "ChangeMe123!" || password.length < 12)) {
+    throw new Error(
+      "SEED_ADMIN_PASSWORD must be set to a password of at least 12 characters (not the example one) before the first admin is created.",
+    );
+  }
 
   const admin = await prisma.user.create({
     data: {

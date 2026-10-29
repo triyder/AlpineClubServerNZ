@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { clubRegisterSchema } from "@/lib/validation";
-import { registerClub } from "@/lib/clubs";
+import { REGISTER_PER_WINDOW, REGISTER_WINDOW_MS, registerClub } from "@/lib/clubs";
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -15,7 +15,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
  */
 export async function POST(req: Request) {
   const ip = clientIp(req) ?? "unknown";
-  const rl = checkRateLimit(`register:${ip}`);
+  const rl = checkRateLimit(`register:${ip}`, Date.now(), REGISTER_PER_WINDOW, REGISTER_WINDOW_MS);
   if (!rl.allowed) {
     return rateLimited(rl.resetAt);
   }
