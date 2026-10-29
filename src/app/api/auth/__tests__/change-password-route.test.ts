@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getSession = vi.fn();
+const createSession = vi.fn();
 vi.mock("@/lib/auth/session", () => ({
   getSession: () => getSession(),
+  createSession: (...a: unknown[]) => createSession(...a),
 }));
 
 const findUnique = vi.fn();
@@ -34,6 +36,7 @@ const SESSION = { userId: "u1", email: "admin@x.nz", role: "ADMIN" as const };
 describe("POST /api/auth/change-password", () => {
   beforeEach(() => {
     getSession.mockReset();
+    createSession.mockReset();
     findUnique.mockReset();
     update.mockClear();
     auditCreate.mockClear();
@@ -86,5 +89,14 @@ describe("POST /api/auth/change-password", () => {
     expect(typeof arg.data.passwordHash).toBe("string");
     expect(arg.data.passwordHash).not.toBe("Fresh-Password-2");
     expect(arg.data.passwordChangedAt).toBeInstanceOf(Date);
+    // Older sessions are void now; this browser is issued a fresh one.
+    expect(createSession).toHaveBeenCalledWith(SESSION);
+  });
+
+  it("refuses a new password longer than bcrypt reads (72 bytes)", async () => {
+    getSession.mockResolvedValue(SESSION);
+    const res = await POST(post({ currentPassword: "old", newPassword: "é".repeat(40) }));
+    expect(res.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,14 @@ import { prisma } from "@/lib/db";
 import type { ClubRegisterInput } from "@/lib/validation";
 import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 
+/**
+ * Registration requests one caller address may make per window, on the web
+ * form and the API alike. Unauthenticated, and each creates a club row (and,
+ * from the form, an API key), so it is held well below the general limit.
+ */
+export const REGISTER_PER_WINDOW = 5;
+export const REGISTER_WINDOW_MS = 60 * 60_000;
+
 export type RegisterClubResult =
   | { ok: true; club: Club; created: boolean }
   | { ok: false; error: string };

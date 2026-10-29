@@ -31,6 +31,17 @@ export async function signSession(payload: SessionPayload): Promise<string> {
 export async function verifySession(
   token: string,
 ): Promise<SessionPayload | null> {
+  return (await readSessionToken(token))?.session ?? null;
+}
+
+/**
+ * `verifySession` plus when the token was issued (Unix seconds), which the
+ * Node side compares with the user's `passwordChangedAt` so a password change
+ * ends every session made before it.
+ */
+export async function readSessionToken(
+  token: string,
+): Promise<{ session: SessionPayload; issuedAt: number } | null> {
   try {
     const { payload } = await jwtVerify(token, secretKey(), {
       algorithms: ["HS256"],
@@ -38,12 +49,16 @@ export async function verifySession(
     if (
       typeof payload.userId === "string" &&
       typeof payload.email === "string" &&
-      typeof payload.role === "string"
+      typeof payload.role === "string" &&
+      typeof payload.iat === "number"
     ) {
       return {
-        userId: payload.userId,
-        email: payload.email,
-        role: payload.role as Role,
+        session: {
+          userId: payload.userId,
+          email: payload.email,
+          role: payload.role as Role,
+        },
+        issuedAt: payload.iat,
       };
     }
     return null;

@@ -5,6 +5,12 @@ const issueClubToken = vi.fn();
 const recordAudit = vi.fn();
 vi.mock("@/lib/clubs", () => ({
   registerClub: (...a: unknown[]) => registerClub(...a),
+  REGISTER_PER_WINDOW: 5,
+  REGISTER_WINDOW_MS: 3_600_000,
+}));
+let callerIp = "203.0.113.1";
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ "x-forwarded-for": callerIp }),
 }));
 vi.mock("@/lib/issue-club-token", () => ({
   issueClubToken: (...a: unknown[]) => issueClubToken(...a),
@@ -14,6 +20,7 @@ vi.mock("@/lib/audit", () => ({
 }));
 
 import { registerAction } from "../actions";
+import { resetRateLimits } from "@/lib/rate-limit";
 
 function form(fields: Record<string, string | string[]>): FormData {
   const fd = new FormData();
@@ -33,6 +40,8 @@ const VALID = {
 
 describe("registerAction (#30): the club gets its first key on the spot", () => {
   beforeEach(() => {
+    resetRateLimits();
+    callerIp = "203.0.113.1";
     registerClub.mockReset();
     issueClubToken.mockReset();
     recordAudit.mockReset();
@@ -106,5 +115,27 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
     expect(failed).toEqual({ error: "Could not register club." });
 
     expect(issueClubToken).not.toHaveBeenCalled();
+  });
+
+  it("refuses a sixth registration from one address within the hour, creating nothing", async () => {
+    registerClub.mockResolvedValue({
+      ok: true,
+      created: true,
+      club: { id: "club-1", code: "RUAPEHU", status: "PENDING" },
+    });
+    for (let i = 0; i < 5; i++) {
+      await registerAction({}, form({ ...VALID, code: `CLUB${i}` }));
+    }
+    registerClub.mockClear();
+    issueClubToken.mockClear();
+
+    const state = await registerAction({}, form({ ...VALID, code: "CLUB6" }));
+    expect(state.error).toMatch(/Too many registrations/);
+    expect(registerClub).not.toHaveBeenCalled();
+    expect(issueClubToken).not.toHaveBeenCalled();
+
+    // Another address is unaffected.
+    callerIp = "198.51.100.9";
+    expect((await registerAction({}, form({ ...VALID, code: "CLUB7" }))).success).toBe(true);
   });
 });

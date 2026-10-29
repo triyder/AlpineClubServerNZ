@@ -48,7 +48,13 @@ export const changePasswordSchema = z.object({
   newPassword: z
     .string()
     .min(12, "New password must be at least 12 characters")
-    .max(128, "New password must be at most 128 characters"),
+    .max(128, "New password must be at most 128 characters")
+    // bcrypt reads only the first 72 BYTES; anything past them would be
+    // silently ignored, so a long passphrase would be weaker than it looks.
+    .refine(
+      (v) => new TextEncoder().encode(v).length <= 72,
+      "New password must be at most 72 bytes (fewer characters if it uses accents or symbols)",
+    ),
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 

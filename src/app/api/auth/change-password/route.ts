@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSession } from "@/lib/auth/session";
+import { createSession, getSession } from "@/lib/auth/session";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { changePasswordSchema } from "@/lib/validation";
 import { recordAudit } from "@/lib/audit";
@@ -70,6 +70,10 @@ export async function POST(req: Request) {
       passwordChangedAt: new Date(),
     },
   });
+  // The change voids every session issued before it (`getSession`), this
+  // browser's included, so hand this browser a fresh one: the other browsers
+  // signed in as this user are the ones signed out.
+  await createSession(session);
 
   await recordAudit({
     action: "auth.password.change",

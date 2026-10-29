@@ -56,7 +56,9 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set (>=32 chars)}
       SESSION_MAX_AGE: ${SESSION_MAX_AGE:-604800}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@alpineclub.nz}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-ChangeMe123!}
+      # No fallback: in production the seed refuses to create the first admin
+      # with the example password (it only runs on an empty database).
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
       # Derives each club's push secret: signs shared-post pushes AND the
@@ -109,6 +111,10 @@ services:
       - "${WEB_HTTPS_PORT:-443}:443"
     environment:
       DOMAIN: ${DOMAIN:-localhost}
+      # The proxy in front of Caddy whose X-Forwarded-For is believed, e.g.
+      # 192.168.1.101 for Nginx Proxy Manager. Unset: only loopback, so every
+      # visitor would share the proxy's address (see Caddyfile).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
