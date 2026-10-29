@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { assertPublicDestination, PushTargetError } from "@/lib/push-targets";
+import { assertPublicDestination, clubDispatcher, PushTargetError } from "@/lib/push-targets";
 import { SERVER_API_VERSION, apiVersionsMatch } from "@/lib/api-version";
 
 /**
@@ -265,7 +265,9 @@ async function deliverOne(deliveryId: string): Promise<
       // straight past the address check performed above.
       redirect: "manual",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+      // Connects only to an address that passes the same check (rebinding).
+      dispatcher: clubDispatcher(),
+    } as RequestInit);
   } catch (error) {
     return fail(
       error instanceof Error ? error.message : "The club could not be reached.",

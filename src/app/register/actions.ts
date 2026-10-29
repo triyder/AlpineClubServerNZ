@@ -41,6 +41,20 @@ export async function registerAction(
   }
 
   const ip = clientIpFromHeaders(await headers()) ?? "unknown";
+
+  // The honeypot field is hidden from people, so a value means a bot. It gets
+  // the same answer an existing code gets, so it learns nothing, and nothing
+  // is created.
+  if (String(formData.get("website") ?? "").trim() !== "") {
+    await recordAudit({
+      action: "club.register",
+      outcome: "FAILURE",
+      ipAddress: ip,
+      metadata: { reason: "honeypot", source: "web" },
+    });
+    return { success: true, created: false };
+  }
+
   if (!checkRateLimit(`register:${ip}`, Date.now(), REGISTER_PER_WINDOW, REGISTER_WINDOW_MS).allowed) {
     return { error: "Too many registrations from this address. Please try again in an hour." };
   }

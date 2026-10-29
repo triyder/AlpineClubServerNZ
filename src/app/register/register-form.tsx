@@ -69,6 +69,12 @@ export function RegisterForm({ lodgeOptions }: { lodgeOptions: ClubLodgeOption[]
           </div>
         ) : (
           <form action={formAction} className="space-y-4">
+            {/* Honeypot: off-screen and out of the tab order, so people never
+                fill it; form-filling bots usually do (see registerAction). */}
+            <div aria-hidden="true" className="absolute -left-[10000px] h-px w-px overflow-hidden">
+              <label htmlFor="website">Website</label>
+              <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">Lodge / club name</Label>
               <Input id="name" name="name" required />

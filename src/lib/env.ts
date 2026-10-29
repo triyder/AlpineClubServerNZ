@@ -48,8 +48,21 @@ export function sessionCookieSecure(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+/**
+ * How long a session lasts WITHOUT USE (seconds). The proxy re-issues the
+ * token while the console is in use, so this is an idle timeout.
+ */
 export function sessionMaxAgeSeconds(): number {
   const raw = Number(process.env.SESSION_MAX_AGE);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60 * 60 * 12; // 12 hours
+}
+
+/**
+ * The longest a session can last from sign-in however active it is
+ * (seconds); after it the password must be entered again.
+ */
+export function sessionAbsoluteMaxAgeSeconds(): number {
+  const raw = Number(process.env.SESSION_ABSOLUTE_MAX_AGE);
   return Number.isFinite(raw) && raw > 0 ? raw : 60 * 60 * 24 * 7; // 7 days
 }
 
@@ -86,6 +99,26 @@ export function allowedPrivateClubAddresses(): ReadonlySet<string> {
       .split(",")
       .map((entry) => entry.trim().toLowerCase())
       .filter((entry) => isIP(entry) !== 0),
+  );
+}
+
+/**
+ * The club hostnames that may use an `ALLOWED_PRIVATE_CLUB_ADDRESSES` address
+ * (`ALLOWED_PRIVATE_CLUB_HOSTNAMES`, comma-separated, exact names).
+ *
+ * The private address is a reverse proxy, and a proxy answers for EVERY site
+ * behind it, not only club installs. Without this list any hostname that
+ * resolves to the proxy passes, so a club could point its push URL at another
+ * site the proxy serves. Naming the club hosts closes that. Empty means the
+ * older behaviour (any hostname at the address), with a warning logged.
+ */
+export function allowedPrivateClubHostnames(): ReadonlySet<string> {
+  const raw = process.env.ALLOWED_PRIVATE_CLUB_HOSTNAMES ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase().replace(/\.$/, ""))
+      .filter((entry) => entry.length > 0 && isIP(entry) === 0),
   );
 }
 

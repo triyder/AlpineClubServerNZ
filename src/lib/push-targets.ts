@@ -1,6 +1,8 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { allowedPrivateClubAddresses } from "@/lib/env";
+import { Agent } from "undici";
+import { allowedPrivateClubAddresses, allowedPrivateClubHostnames } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
 /**
  * Validating the URL a club asks this server to push to.
@@ -19,10 +21,9 @@ import { allowedPrivateClubAddresses } from "@/lib/env";
  *     ordinary hostname that resolves to 10.0.0.1.
  *
  * The address is re-checked immediately before each delivery rather than only
- * at registration, since DNS can be repointed at any time (rebinding). That
- * still leaves a window between the check and the connection; closing it
- * entirely needs a custom agent pinned to the resolved address, which is worth
- * doing if this ever carries anything more sensitive than a club's own posts.
+ * at registration, since DNS can be repointed at any time (rebinding), and the
+ * connection itself goes through `clubDispatcher`, whose socket lookup runs
+ * the same check: the address checked is the address connected to.
  */
 
 export class PushTargetError extends Error {
@@ -138,9 +139,33 @@ export async function assertPublicDestination(url: string): Promise<void> {
   // of "[::1]" is not a lookup of "::1".
   const hostname = new URL(url).hostname.replace(/^\[|\]$/g, "");
 
-  let addresses: { address: string }[];
+  await resolveClubAddresses(hostname);
+}
+
+let warnedNoHostnames = false;
+
+/**
+ * Resolve a club hostname and return its addresses, refusing the lot when any
+ * one of them lands inside the network.
+ *
+ * EVERY address must be acceptable, not merely one of them: a host with both
+ * a public and a private record would otherwise pass and connect to whichever
+ * the resolver returned first.
+ *
+ * The one exception is an address the operator named exactly in
+ * ALLOWED_PRIVATE_CLUB_ADDRESSES — the reverse proxy club installs are reached
+ * through on this server's own network — and then only for a hostname named
+ * in ALLOWED_PRIVATE_CLUB_HOSTNAMES, because that proxy also serves sites that
+ * are not clubs. Exact matches only; the rest of the private ranges stay
+ * refused.
+ */
+export async function resolveClubAddresses(
+  hostname: string,
+): Promise<{ address: string; family: number }[]> {
+  const name = hostname.toLowerCase().replace(/\.$/, "");
+  let addresses: { address: string; family: number }[];
   try {
-    addresses = await lookup(hostname, { all: true });
+    addresses = await lookup(name, { all: true });
   } catch {
     throw new PushTargetError("That hostname could not be resolved.");
   }
@@ -148,22 +173,73 @@ export async function assertPublicDestination(url: string): Promise<void> {
     throw new PushTargetError("That hostname could not be resolved.");
   }
 
-  // EVERY address must be acceptable, not merely one of them: a host with both
-  // a public and a private record would otherwise pass here and connect to
-  // whichever the resolver returned first at delivery time.
-  //
-  // The one exception is an address the operator named exactly in
-  // ALLOWED_PRIVATE_CLUB_ADDRESSES — the reverse proxy club installs are
-  // reached through on this server's own network. Exact match only; the rest
-  // of the private ranges stay refused.
   const allowed = allowedPrivateClubAddresses();
+  const hostnames = allowedPrivateClubHostnames();
   for (const { address } of addresses) {
-    if (isBlockedAddress(address) && !allowed.has(address.toLowerCase())) {
+    if (!isBlockedAddress(address)) continue;
+    if (!allowed.has(address.toLowerCase())) {
+      throw new PushTargetError(
+        "That hostname resolves to an address inside a private network.",
+      );
+    }
+    if (hostnames.size === 0) {
+      if (!warnedNoHostnames) {
+        warnedNoHostnames = true;
+        logger.warn(
+          "ALLOWED_PRIVATE_CLUB_HOSTNAMES is empty: any hostname at an allowed private address is accepted. Name the club hostnames to restrict it.",
+        );
+      }
+    } else if (!hostnames.has(name)) {
       throw new PushTargetError(
         "That hostname resolves to an address inside a private network.",
       );
     }
   }
+  return addresses;
+}
+
+type LookupCallback = (
+  err: NodeJS.ErrnoException | null,
+  address: string | { address: string; family: number }[],
+  family?: number,
+) => void;
+
+/**
+ * A `lookup` for the socket itself: it resolves AND checks at the moment of
+ * connecting, so the address that was checked is the address connected to.
+ * Checking first and then letting `fetch` resolve again leaves a window in
+ * which DNS can be repointed (rebinding); this closes it.
+ */
+export function clubLookup(
+  hostname: string,
+  options: { all?: boolean } | number | undefined,
+  callback: LookupCallback,
+): void {
+  const all = typeof options === "object" && options !== null && options.all === true;
+  resolveClubAddresses(hostname).then(
+    (addresses) => {
+      if (all) callback(null, addresses);
+      else callback(null, addresses[0]!.address, addresses[0]!.family);
+    },
+    (error: unknown) => {
+      const err = Object.assign(
+        new Error(error instanceof Error ? error.message : "Refused destination"),
+        { code: "EREFUSED" },
+      ) as NodeJS.ErrnoException;
+      callback(err, all ? [] : "");
+    },
+  );
+}
+
+let dispatcher: Agent | null = null;
+
+/**
+ * The `fetch` dispatcher for every call to a club (pushes and the free-beds
+ * question). Its sockets connect only through `clubLookup`.
+ */
+export function clubDispatcher(): Agent {
+  dispatcher ??= new Agent({ connect: { lookup: clubLookup as never } });
+  return dispatcher;
 }
 
 /** Shape check plus resolution. What registration should call. */

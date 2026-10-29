@@ -1,18 +1,19 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { config } from "@/proxy";
+import { config, PROTECTED_PREFIXES } from "@/proxy";
 import { isPublicPath, PUBLIC_PAGES } from "@/lib/public-pages";
 
 /**
  * GUARD: every console page is behind the proxy's session gate.
  *
- * `src/proxy.ts` only runs for the paths in its `matcher`, so a page added
- * without a matcher entry is silently ungated at the edge — the page's own
- * `getSession()` check still stands, but the first gate is simply absent, and
- * nothing at runtime says so. `/issues` shipped that way. This lists every page
- * under `src/app` and requires each to be matched, apart from the few that are
- * public on purpose.
+ * `src/proxy.ts` runs on every page (for the CSP nonce) but gates only the
+ * paths in `PROTECTED_PREFIXES`, so a page added without an entry is silently
+ * ungated at the edge — the page's own `getSession()` check still stands, but
+ * the first gate is simply absent, and nothing at runtime says so. `/issues`
+ * shipped that way. This lists every page under `src/app` and requires each to
+ * be gated, apart from the few that are public on purpose, and requires the
+ * matcher to reach every page at all.
  */
 
 const APP_ROOT = join(process.cwd(), "src", "app");
@@ -32,11 +33,14 @@ function pageRoutes(dir: string, prefix = ""): string[] {
   });
 }
 
+/** Whether the proxy's gate applies to `route`. */
 function isMatched(route: string): boolean {
-  return config.matcher.some((entry) => {
-    const base = entry.replace(/\/:path\*$/, "");
-    return route === base || route.startsWith(`${base}/`);
-  });
+  return PROTECTED_PREFIXES.some((base) => route === base || route.startsWith(`${base}/`));
+}
+
+/** Whether the proxy runs for `path` at all (Next anchors the matcher). */
+function proxyRuns(path: string): boolean {
+  return config.matcher.some((source) => new RegExp(`^${source}$`).test(path));
 }
 
 describe("proxy session gate coverage", () => {
@@ -66,6 +70,13 @@ describe("proxy session gate coverage", () => {
     expect(routes).toContain("/book");
     expect(isMatched("/book")).toBe(false);
     expect(isMatched("/book/go/abc")).toBe(false);
+  });
+
+  it("runs on every page (so each gets a CSP nonce) but never on the API or static assets", () => {
+    for (const route of routes) expect(proxyRuns(route), route).toBe(true);
+    expect(proxyRuns("/api/v1/feed")).toBe(false);
+    expect(proxyRuns("/_next/static/chunks/app.js")).toBe(false);
+    expect(proxyRuns("/_next/image")).toBe(false);
   });
 
   it("covers the image manager and the issues screen explicitly", () => {

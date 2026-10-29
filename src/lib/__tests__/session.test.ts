@@ -69,4 +69,22 @@ describe("getSession checks the token against the user's row", () => {
     findUnique.mockResolvedValue({ email: "new@x.nz", role: "USER", passwordChangedAt: null });
     expect(await getSession()).toEqual({ userId: "u1", email: "new@x.nz", role: "USER" });
   });
+
+  it("voids a REFRESHED token whose sign-in was before the password change", async () => {
+    // Issued just now by the proxy's refresh, but the password was typed 10
+    // minutes ago and changed 1 minute ago elsewhere.
+    const now = Math.floor(Date.now() / 1000);
+    cookieValue = await new SignJWT({ userId: "u1", email: "old@x.nz", role: "ADMIN", authAt: now - 600 })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(secret());
+    findUnique.mockResolvedValue({
+      email: "old@x.nz",
+      role: "ADMIN",
+      passwordChangedAt: new Date(Date.now() - 60_000),
+    });
+    expect(await getSession()).toBeNull();
+  });
 });
+

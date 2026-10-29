@@ -117,6 +117,16 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
     expect(issueClubToken).not.toHaveBeenCalled();
   });
 
+  it("creates nothing when the hidden honeypot field is filled, answering as for an existing code", async () => {
+    const state = await registerAction({}, form({ ...VALID, website: "http://spam.example" }));
+    expect(state).toEqual({ success: true, created: false });
+    expect(registerClub).not.toHaveBeenCalled();
+    expect(issueClubToken).not.toHaveBeenCalled();
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "FAILURE", metadata: expect.objectContaining({ reason: "honeypot" }) }),
+    );
+  });
+
   it("refuses a sixth registration from one address within the hour, creating nothing", async () => {
     registerClub.mockResolvedValue({
       ok: true,

@@ -4,7 +4,7 @@ import { eachNight } from "@/lib/lodge-search";
 import { liveOtherLodgeWhere } from "@/lib/other-lodges";
 import { logger } from "@/lib/logger";
 import { derivePushSecret, signPushBody } from "@/lib/push-delivery";
-import { assertPublicDestination } from "@/lib/push-targets";
+import { assertPublicDestination, clubDispatcher } from "@/lib/push-targets";
 
 /**
  * Asking club booking sites how many beds are free, for the public lodge
@@ -152,7 +152,9 @@ export async function askClubForFreeBeds(
       // straight past the destination check above.
       redirect: "manual",
       signal: AbortSignal.timeout(CLUB_AVAILABILITY_TIMEOUT_MS),
-    });
+      // Connects only to an address that passes the same check (rebinding).
+      dispatcher: clubDispatcher(),
+    } as RequestInit);
     if (response.status !== 200) return null;
 
     const parsed = answerSchema.safeParse(await response.json());
