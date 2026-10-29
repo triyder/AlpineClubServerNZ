@@ -16,7 +16,7 @@ export const UI_THEME_STORAGE_KEY = "acs-ui-theme";
  */
 export const PUBLIC_THEME_STORAGE_KEY = "acs-public-theme";
 
-export function AppThemeProvider({ children }: { children: ReactNode }) {
+export function AppThemeProvider({ children, nonce }: { children: ReactNode; nonce?: string }) {
   const isPublic = isPublicPath(usePathname() ?? "/");
 
   // Keyed by area: next-themes reads its stored choice once, on mount, so
@@ -31,6 +31,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       enableColorScheme
       disableTransitionOnChange
       storageKey={PUBLIC_THEME_STORAGE_KEY}
+      nonce={nonce}
     >
       {children}
     </ThemeProvider>
@@ -43,6 +44,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       enableColorScheme
       disableTransitionOnChange
       storageKey={UI_THEME_STORAGE_KEY}
+      nonce={nonce}
     >
       {children}
     </ThemeProvider>

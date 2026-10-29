@@ -1,10 +1,10 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
-import { sessionCookieSecure, sessionMaxAgeSeconds } from "@/lib/env";
 import {
   SESSION_COOKIE,
   readSessionToken,
+  sessionCookieOptions,
   signSession,
   type SessionPayload,
 } from "@/lib/auth/session-token";
@@ -15,13 +15,7 @@ export { SESSION_COOKIE, type SessionPayload };
 export async function createSession(payload: SessionPayload): Promise<void> {
   const token = await signSession(payload);
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: sessionCookieSecure(),
-    sameSite: "lax",
-    path: "/",
-    maxAge: sessionMaxAgeSeconds(),
-  });
+  jar.set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 /**
@@ -45,7 +39,9 @@ export async function getSession(): Promise<SessionPayload | null> {
     select: { email: true, role: true, passwordChangedAt: true },
   });
   if (!user) return null;
-  if (user.passwordChangedAt && read.issuedAt < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+  // Against the SIGN-IN time, not the token's: the proxy re-issues tokens
+  // while the console is in use, and a refresh must not outlive a change.
+  if (user.passwordChangedAt && read.authAt < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
     return null;
   }
   return { userId: read.session.userId, email: user.email, role: user.role };

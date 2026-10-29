@@ -5,6 +5,7 @@ vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
 
 import {
   assertPublicDestination,
+  clubLookup,
   isBlockedAddress,
   PushTargetError,
   validatePushUrlShape,
@@ -146,6 +147,7 @@ describe("assertPublicDestination", () => {
 describe("ALLOWED_PRIVATE_CLUB_ADDRESSES (the reverse proxy clubs are reached through)", () => {
   afterEach(() => {
     delete process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES;
+    delete process.env.ALLOWED_PRIVATE_CLUB_HOSTNAMES;
   });
 
   it("lets through exactly the named private address", async () => {
@@ -189,5 +191,57 @@ describe("ALLOWED_PRIVATE_CLUB_ADDRESSES (the reverse proxy clubs are reached th
     await expect(
       assertPublicDestination("https://club.example.nz/push"),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("ALLOWED_PRIVATE_CLUB_HOSTNAMES (which names may use the proxy address)", () => {
+  afterEach(() => {
+    delete process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES;
+    delete process.env.ALLOWED_PRIVATE_CLUB_HOSTNAMES;
+  });
+
+  it("lets a named club host through at the allowed proxy address", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.101";
+    process.env.ALLOWED_PRIVATE_CLUB_HOSTNAMES = "club.example.nz, other.example.nz";
+    mocks.lookup.mockResolvedValue([{ address: "192.168.1.101", family: 4 }]);
+    await expect(assertPublicDestination("https://club.example.nz/push")).resolves.toBeUndefined();
+    await expect(assertPublicDestination("https://CLUB.example.nz./push")).resolves.toBeUndefined();
+  });
+
+  it("refuses any other site the proxy also serves", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.101";
+    process.env.ALLOWED_PRIVATE_CLUB_HOSTNAMES = "club.example.nz";
+    mocks.lookup.mockResolvedValue([{ address: "192.168.1.101", family: 4 }]);
+    await expect(
+      assertPublicDestination("https://home.example.nz/api/webhook"),
+    ).rejects.toThrow(/private network/);
+  });
+
+  it("does not need a hostname entry for a public address", async () => {
+    process.env.ALLOWED_PRIVATE_CLUB_ADDRESSES = "192.168.1.101";
+    process.env.ALLOWED_PRIVATE_CLUB_HOSTNAMES = "club.example.nz";
+    mocks.lookup.mockResolvedValue([{ address: "203.0.113.10", family: 4 }]);
+    await expect(assertPublicDestination("https://public.example.nz/push")).resolves.toBeUndefined();
+  });
+});
+
+describe("clubLookup (the socket's own lookup, so rebinding cannot slip past)", () => {
+  function run(options: { all?: boolean }) {
+    return new Promise<{ err: NodeJS.ErrnoException | null; address: unknown; family?: number }>((resolve) =>
+      clubLookup("club.example.nz", options, (err, address, family) => resolve({ err, address, family })),
+    );
+  }
+
+  it("hands the socket the checked public address", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "203.0.113.10", family: 4 }]);
+    expect(await run({})).toEqual({ err: null, address: "203.0.113.10", family: 4 });
+    expect((await run({ all: true })).address).toEqual([{ address: "203.0.113.10", family: 4 }]);
+  });
+
+  it("fails the connection when the name now resolves inside the network", async () => {
+    mocks.lookup.mockResolvedValue([{ address: "127.0.0.1", family: 4 }]);
+    const { err } = await run({ all: true });
+    expect(err?.message).toMatch(/private network/);
+    expect(err?.code).toBe("EREFUSED");
   });
 });

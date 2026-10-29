@@ -15,7 +15,10 @@ const mocks = vi.hoisted(() => ({
   assertPublicDestination: vi.fn(),
   findMany: vi.fn(),
 }));
-vi.mock("@/lib/push-targets", () => ({ assertPublicDestination: mocks.assertPublicDestination }));
+vi.mock("@/lib/push-targets", () => ({
+  assertPublicDestination: mocks.assertPublicDestination,
+  clubDispatcher: () => "club-dispatcher",
+}));
 vi.mock("@/lib/db", () => ({ prisma: { otherLodge: { findMany: mocks.findMany } } }));
 
 import {
@@ -61,7 +64,7 @@ describe("askClubForFreeBeds", () => {
     expect(String(url)).toBe(
       "https://bookings.club.example/api/webhooks/servernz-availability?lodgeId=ol_a&from=2026-07-10&to=2026-07-13",
     );
-    expect(init).toMatchObject({ method: "GET", redirect: "manual", cache: "no-store" });
+    expect(init).toMatchObject({ method: "GET", redirect: "manual", cache: "no-store", dispatcher: "club-dispatcher" });
 
     const timestamp = init.headers["X-Acs-Timestamp"];
     // Computed independently of the module: the club's derived secret over the

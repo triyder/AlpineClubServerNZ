@@ -1,17 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/auth/session-token";
+import {
+  SESSION_COOKIE,
+  readSessionToken,
+  refreshedSessionToken,
+  sessionCookieOptions,
+} from "@/lib/auth/session-token";
 
 /**
- * Next.js proxy (formerly "middleware"). Gate the authenticated web console.
- * Runs on the Edge runtime, so it only does
- * a stateless JWT signature/expiry check (jose) — no DB access. Route handlers
- * still re-check role/authorization server-side; this is a first gate that
- * keeps unauthenticated users off the dashboard entirely.
+ * Next.js proxy (formerly "middleware"). Two jobs, on every page:
  *
- * The `/api/v1/*` client API authenticates via bearer token inside each route
- * handler and is deliberately NOT matched here.
+ *  1. CONTENT SECURITY POLICY with a fresh nonce per request. Next reads the
+ *     nonce from the request's CSP header and stamps it on its own scripts,
+ *     so only scripts this server rendered run; an injected `<script>` has no
+ *     nonce and is refused.
+ *  2. THE SESSION GATE for the console. A stateless JWT signature/expiry check
+ *     (jose) — no DB access. Pages and route handlers still re-check the
+ *     session against the database (`getSession`); this is a first gate that
+ *     keeps signed-out visitors off the console entirely. While the console is
+ *     in use the token is re-issued, so `SESSION_MAX_AGE` is an idle timeout.
+ *
+ * The `/api/*` routes authenticate themselves (bearer token or session) and
+ * serve no HTML, so they are deliberately NOT matched.
  */
-const PROTECTED_PREFIXES = [
+export const PROTECTED_PREFIXES = [
   "/dashboard",
   "/clubs",
   "/lodges",
@@ -23,37 +34,57 @@ const PROTECTED_PREFIXES = [
   "/settings",
 ];
 
+/** The policy for one response; `nonce` is fresh per request. */
+export function contentSecurityPolicy(nonce: string, dev = process.env.NODE_ENV === "development"): string {
+  return [
+    "default-src 'self'",
+    // 'strict-dynamic' lets a nonced script load the chunks it needs; in dev,
+    // React Refresh also needs eval.
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
+    // Inline style ATTRIBUTES cannot carry a nonce, and React writes them.
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src 'self'${dev ? " ws:" : ""}`,
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const nonce = btoa(crypto.randomUUID());
+  const csp = contentSecurityPolicy(nonce);
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
 
   const isProtected = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
-  if (!isProtected) return NextResponse.next();
+  const token = isProtected ? req.cookies.get(SESSION_COOKIE)?.value : undefined;
+  const read = token ? await readSessionToken(token) : null;
 
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySession(token) : null;
-
-  if (!session) {
-    const loginUrl = new URL("/login", req.url);
-    return NextResponse.redirect(loginUrl);
+  if (isProtected && !read) {
+    const res = NextResponse.redirect(new URL("/login", req.url));
+    res.headers.set("Content-Security-Policy", csp);
+    return res;
   }
 
-  return NextResponse.next();
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  res.headers.set("Content-Security-Policy", csp);
+  if (read) {
+    const fresh = await refreshedSessionToken(read);
+    if (fresh) res.cookies.set(SESSION_COOKIE, fresh, sessionCookieOptions());
+  }
+  return res;
 }
 
 export const config = {
-  // Must stay in step with PROTECTED_PREFIXES above: a path in one list but
-  // not the other is silently ungated, because the proxy never runs for it.
-  matcher: [
-    "/dashboard/:path*",
-    "/clubs/:path*",
-    "/lodges/:path*",
-    "/issues/:path*",
-    "/admin/:path*",
-    "/audit/:path*",
-    "/profile/:path*",
-    "/posts/:path*",
-    "/settings/:path*",
-  ],
+  // Every page (for the CSP nonce); the session gate inside applies only to
+  // PROTECTED_PREFIXES. Static assets and the API are skipped.
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico).*)"],
 };

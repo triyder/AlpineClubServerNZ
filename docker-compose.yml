@@ -20,7 +20,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alpine}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      # Required: no fallback, so a deploy without one stops rather than
+      # running the database on the password printed in this repository.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB:-alpineserver}
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -52,9 +54,12 @@ services:
     environment:
       NODE_ENV: production
       # Inside the compose network the DB host is the service name `db`.
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alpine}:${POSTGRES_PASSWORD:-change-me-in-production}@db:5432/${POSTGRES_DB:-alpineserver}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alpine}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-alpineserver}?schema=public
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set (>=32 chars)}
-      SESSION_MAX_AGE: ${SESSION_MAX_AGE:-604800}
+      # Idle timeout (re-issued while the console is in use) and the longest a
+      # sign-in lasts however active, in seconds.
+      SESSION_MAX_AGE: ${SESSION_MAX_AGE:-43200}
+      SESSION_ABSOLUTE_MAX_AGE: ${SESSION_ABSOLUTE_MAX_AGE:-604800}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@alpineclub.nz}
       # No fallback: in production the seed refuses to create the first admin
       # with the example password (it only runs on an empty database).
@@ -75,6 +80,9 @@ services:
       # Private addresses club installs may be reached at (the reverse proxy on
       # this server's own network), comma-separated IP literals. Empty = none.
       ALLOWED_PRIVATE_CLUB_ADDRESSES: ${ALLOWED_PRIVATE_CLUB_ADDRESSES:-}
+      # The club hostnames allowed at those addresses (the proxy also serves
+      # sites that are not clubs), comma-separated. Empty = any, with a warning.
+      ALLOWED_PRIVATE_CLUB_HOSTNAMES: ${ALLOWED_PRIVATE_CLUB_HOSTNAMES:-}
       # This server's public address, e.g. https://alpine-server.example.nz.
       # Set it when another proxy sits in front of Caddy and talks plain http
       # to it: Caddy then reports the scheme as http, so every console edit is
