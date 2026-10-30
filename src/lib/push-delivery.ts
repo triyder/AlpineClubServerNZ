@@ -176,6 +176,7 @@ async function deliverOne(deliveryId: string): Promise<
           pushUrl: true,
           pushSecretVersion: true,
           lastReportedApiVersion: true,
+          status: true,
         },
       },
       post: {
@@ -184,6 +185,21 @@ async function deliverOne(deliveryId: string): Promise<
     },
   });
   if (!delivery || !delivery.club.pushUrl) return "abandoned";
+
+  // A club unapproved AFTER this row was queued receives nothing while it is
+  // suspended. Held like a version mismatch rather than failed, so no attempt is
+  // consumed: a re-approved club gets the queue, and its own pull of the feed
+  // covers anything that expired meanwhile.
+  if (delivery.club.status !== "APPROVED") {
+    await prisma.postDelivery.update({
+      where: { id: delivery.id },
+      data: {
+        lastError: `Held: club is ${delivery.club.status.toLowerCase()}, not approved.`,
+        nextAttemptAt: new Date(Date.now() + VERSION_HOLD_SECONDS * 1000),
+      },
+    });
+    return "held";
+  }
 
   // A club that has reported a DIFFERENT API version receives nothing until it
   // matches. HELD, not failed: no attempt is consumed and nothing is abandoned,

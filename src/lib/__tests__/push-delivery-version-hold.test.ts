@@ -37,6 +37,7 @@ function row(lastReportedApiVersion: string | null) {
       pushUrl: "https://club.example/hook",
       pushSecretVersion: 1,
       lastReportedApiVersion,
+      status: "APPROVED",
     },
     post: { id: "p1", removedAt: null, hiddenAt: null },
   };
@@ -73,6 +74,18 @@ describe("push delivery and the club's reported API version", () => {
     const result = await runPostDeliverySweep();
     expect(result).toMatchObject({ delivered: 1, held: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("HOLDS a delivery queued before the club was unapproved: nothing is sent, no attempt consumed", async () => {
+    deliveryFindUnique.mockResolvedValue({ ...row(SERVER_API_VERSION), club: { ...row(SERVER_API_VERSION).club, status: "SUSPENDED" } });
+    const result = await runPostDeliverySweep();
+
+    expect(result).toMatchObject({ attempted: 1, held: 1, delivered: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const data = deliveryUpdate.mock.calls[0][0].data;
+    expect(data.attempts).toBeUndefined();
+    expect(data.lastError).toContain("suspended");
+    expect(data.nextAttemptAt).toBeInstanceOf(Date);
   });
 
   it("does not hold a club that has never reported a version (older software)", async () => {

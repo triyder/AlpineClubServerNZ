@@ -4,6 +4,7 @@ import { REGISTER_PER_WINDOW, REGISTER_WINDOW_MS, registerClub } from "@/lib/clu
 import { recordAudit } from "@/lib/audit";
 import { clientIp } from "@/lib/api-auth";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { notifyNewClub } from "@/lib/club-notify";
 
 /**
  * POST /api/v1/clubs/register
@@ -41,6 +42,10 @@ export async function POST(req: Request) {
     userAgent: req.headers.get("user-agent"),
     metadata: { code: result.club.code, created: result.created, source: "api" },
   });
+
+  // Not awaited: the registrant is not kept waiting on an SMTP server, and a
+  // mail failure cannot fail the registration (notifyNewClub never throws).
+  if (result.created) void notifyNewClub(result.club.id, "api");
 
   return NextResponse.json(
     {

@@ -13,6 +13,11 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+const notifyNewClub = vi.fn();
+vi.mock("@/lib/club-notify", () => ({
+  notifyNewClub: (...a: unknown[]) => notifyNewClub(...a),
+}));
+
 import { POST } from "@/app/api/v1/clubs/register/route";
 import { resetRateLimits } from "@/lib/rate-limit";
 
@@ -35,6 +40,8 @@ describe("POST /api/v1/clubs/register", () => {
     findUnique.mockReset();
     create.mockReset();
     auditCreate.mockClear();
+    notifyNewClub.mockReset();
+    notifyNewClub.mockResolvedValue({ sent: true, to: ["admin@example.nz"] });
     resetRateLimits();
   });
 
@@ -46,6 +53,7 @@ describe("POST /api/v1/clubs/register", () => {
     expect(res.status).toBe(201);
     const json = await res.json();
     expect(json).toMatchObject({ code: "RUAPEHU", status: "PENDING" });
+    expect(notifyNewClub).toHaveBeenCalledWith("c1", "api");
   });
 
   it("rejects an invalid payload with 400", async () => {
@@ -63,6 +71,8 @@ describe("POST /api/v1/clubs/register", () => {
     const res = await POST(post(valid));
     expect(res.status).toBe(200);
     expect(create).not.toHaveBeenCalled();
+    // A repeat of an existing code tells nobody: it created nothing.
+    expect(notifyNewClub).not.toHaveBeenCalled();
   });
 
   it("rate-limits repeated requests from the same IP with 429", async () => {

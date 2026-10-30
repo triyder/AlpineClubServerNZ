@@ -23,6 +23,8 @@ enum ClubStatus {
   PENDING
   APPROVED
   REJECTED
+  // Switched off by an administrator; can be re-approved (0017).
+  SUSPENDED
 }
 
 enum AuditOutcome {

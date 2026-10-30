@@ -16,11 +16,14 @@ export function ClubApiVersion({
   reported,
   checkedAt,
   serverVersion,
+  align = "start",
 }: {
   reported: string | null;
   checkedAt: Date | null;
   /** Defaults to this server's version; a parameter so it can be tested. */
   serverVersion?: string;
+  /** "end" right-aligns it, for the top-right corner of a club's panel. */
+  align?: "start" | "end";
 }) {
   const status = clubApiVersionStatus(reported, serverVersion);
 
@@ -36,9 +39,12 @@ export function ClubApiVersion({
     );
 
   return (
-    <div className="space-y-1" data-testid="club-api-version">
+    <div
+      className={align === "end" ? "space-y-1 sm:max-w-xs sm:text-right" : "space-y-1"}
+      data-testid="club-api-version"
+    >
       <p className="text-sm font-medium">API version</p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex flex-wrap items-center gap-2${align === "end" ? " sm:justify-end" : ""}`}>
         {badge}
         {checkedAt ? (
           <span className="text-xs text-muted-foreground">
