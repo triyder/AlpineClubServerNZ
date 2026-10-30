@@ -13,6 +13,8 @@ import {
 import {
   approveClubAction,
   rejectClubAction,
+  suspendClubAction,
+  reapproveClubAction,
   revokeTokenAction,
   deleteRevokedTokenAction,
 } from "./actions";
@@ -36,6 +38,8 @@ function statusBadge(status: ClubStatus) {
       return <Badge variant="success">Approved</Badge>;
     case "REJECTED":
       return <Badge variant="destructive">Rejected</Badge>;
+    case "SUSPENDED":
+      return <Badge variant="destructive">Unapproved</Badge>;
     default:
       return <Badge variant="warning">Pending</Badge>;
   }
@@ -102,9 +106,9 @@ export default async function ClubsPage() {
         ) : (
           <div className="space-y-4">
             {clubs.map((club) => (
-              <Card key={club.id}>
+              <Card key={club.id} id={`club-${club.id}`}>
                 <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         {club.name}
@@ -117,10 +121,64 @@ export default async function ClubsPage() {
                         {club.contactEmail}
                       </CardDescription>
                     </div>
-                    {statusBadge(club.status)}
+                    {/* The status and API version share the top-right corner, so
+                        the panel spends no rows of its own on them. */}
+                    <div className="flex flex-col gap-2 sm:items-end">
+                      {statusBadge(club.status)}
+                      {club.status === "APPROVED" ? (
+                        <ClubApiVersion
+                          reported={club.lastReportedApiVersion}
+                          checkedAt={club.lastVersionCheckAt}
+                          align="end"
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {club.status === "APPROVED" ? (
+                    <ClubLodgesSelect
+                      // Re-keyed on the saved list so a save (which refreshes this
+                      // page) remounts the component: that resets its
+                      // unsaved-changes state, and the refreshed chips are the
+                      // confirmation — it shows no "Saved" message of its own.
+                      key={`${club.id}:${lodgeOptions
+                        .filter((l) => l.ownerClubId === club.id)
+                        .map((l) => l.id)
+                        .join(",")}`}
+                      clubId={club.id}
+                      options={lodgeOptions}
+                      initialSelectedIds={lodgeOptions
+                        .filter((l) => l.ownerClubId === club.id)
+                        .map((l) => l.id)}
+                      canManage={canManage}
+                    />
+                  ) : null}
+
+                  {club.status === "SUSPENDED" ? (
+                    <div className="space-y-2 text-sm">
+                      <p className="text-muted-foreground">
+                        Unapproved: its key is refused, and nothing is sent to it or
+                        asked of it. Its lodges and keys are kept for a re-approval.
+                      </p>
+                      <p>
+                        <span className="font-medium">Lodges held:</span>{" "}
+                        {lodgeOptions
+                          .filter((l) => l.ownerClubId === club.id)
+                          .map((l) => l.name)
+                          .join(", ") || "none"}
+                      </p>
+                      {canManage ? (
+                        <form action={reapproveClubAction}>
+                          <input type="hidden" name="clubId" value={club.id} />
+                          <Button size="sm" type="submit">
+                            Re-approve
+                          </Button>
+                        </form>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {canManage && club.status === "PENDING" ? (
                     <div className="flex gap-2">
                       <form action={approveClubAction}>
@@ -157,32 +215,6 @@ export default async function ClubsPage() {
                         </p>
                       ) : null}
                     </div>
-                  ) : null}
-
-                  {club.status === "APPROVED" ? (
-                    <ClubApiVersion
-                      reported={club.lastReportedApiVersion}
-                      checkedAt={club.lastVersionCheckAt}
-                    />
-                  ) : null}
-
-                  {club.status === "APPROVED" ? (
-                    <ClubLodgesSelect
-                      // Re-keyed on the saved list so a save (which refreshes this
-                      // page) remounts the component: that resets its
-                      // unsaved-changes state, and the refreshed chips are the
-                      // confirmation — it shows no "Saved" message of its own.
-                      key={`${club.id}:${lodgeOptions
-                        .filter((l) => l.ownerClubId === club.id)
-                        .map((l) => l.id)
-                        .join(",")}`}
-                      clubId={club.id}
-                      options={lodgeOptions}
-                      initialSelectedIds={lodgeOptions
-                        .filter((l) => l.ownerClubId === club.id)
-                        .map((l) => l.id)}
-                      canManage={canManage}
-                    />
                   ) : null}
 
                   {club.status === "APPROVED" ? (
@@ -252,6 +284,19 @@ export default async function ClubsPage() {
                           No API keys issued yet.
                         </p>
                       )}
+
+                      {canManage ? (
+                        <form action={suspendClubAction} className="border-t border-border pt-3">
+                          <input type="hidden" name="clubId" value={club.id} />
+                          <ConfirmSubmitButton
+                            size="sm"
+                            variant="outline"
+                            message={`Unapprove ${club.name}? Its key stops working at once and nothing more is sent to it. You can re-approve it later.`}
+                          >
+                            Unapprove
+                          </ConfirmSubmitButton>
+                        </form>
+                      ) : null}
                     </div>
                   ) : null}
                 </CardContent>

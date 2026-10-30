@@ -69,7 +69,11 @@ export async function proxy(req: NextRequest) {
   const read = token ? await readSessionToken(token) : null;
 
   if (isProtected && !read) {
-    const res = NextResponse.redirect(new URL("/login", req.url));
+    // Remember where they were going (the review link in a new-club email), so
+    // sign-in can return there. The login action re-checks it (safeNextPath).
+    const login = new URL("/login", req.url);
+    if (pathname !== "/dashboard") login.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
+    const res = NextResponse.redirect(login);
     res.headers.set("Content-Security-Policy", csp);
     return res;
   }

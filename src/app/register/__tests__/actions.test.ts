@@ -18,6 +18,10 @@ vi.mock("@/lib/issue-club-token", () => ({
 vi.mock("@/lib/audit", () => ({
   recordAudit: (...a: unknown[]) => recordAudit(...a),
 }));
+const notifyNewClub = vi.fn();
+vi.mock("@/lib/club-notify", () => ({
+  notifyNewClub: (...a: unknown[]) => notifyNewClub(...a),
+}));
 
 import { registerAction } from "../actions";
 import { resetRateLimits } from "@/lib/rate-limit";
@@ -45,6 +49,8 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
     registerClub.mockReset();
     issueClubToken.mockReset();
     recordAudit.mockReset();
+    notifyNewClub.mockReset();
+    notifyNewClub.mockResolvedValue({ sent: true, to: ["admin@example.nz"] });
     issueClubToken.mockResolvedValue({
       id: "tok-1",
       name: "Default key",
@@ -73,6 +79,22 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "club.register", clubId: "club-1" }),
     );
+    // The administrators are told, once.
+    expect(notifyNewClub).toHaveBeenCalledTimes(1);
+    expect(notifyNewClub).toHaveBeenCalledWith("club-1", "web");
+  });
+
+  it("still answers when the administrators' mail cannot be sent", async () => {
+    registerClub.mockResolvedValue({
+      ok: true,
+      created: true,
+      club: { id: "club-1", code: "RUAPEHU", status: "PENDING" },
+    });
+    // Never resolves: the registration must not wait on the SMTP server.
+    notifyNewClub.mockReturnValue(new Promise(() => {}));
+
+    const state = await registerAction({}, form(VALID));
+    expect(state).toMatchObject({ success: true, created: true });
   });
 
   it("passes every ticked lodge and the note through to the write (#40), and none when none was ticked", async () => {
@@ -103,6 +125,7 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
 
     expect(state).toEqual({ success: true, created: false });
     expect(issueClubToken).not.toHaveBeenCalled();
+    expect(notifyNewClub).not.toHaveBeenCalled();
   });
 
   it("issues nothing on a validation or registration failure", async () => {
@@ -122,6 +145,7 @@ describe("registerAction (#30): the club gets its first key on the spot", () => 
     expect(state).toEqual({ success: true, created: false });
     expect(registerClub).not.toHaveBeenCalled();
     expect(issueClubToken).not.toHaveBeenCalled();
+    expect(notifyNewClub).not.toHaveBeenCalled();
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "FAILURE", metadata: expect.objectContaining({ reason: "honeypot" }) }),
     );

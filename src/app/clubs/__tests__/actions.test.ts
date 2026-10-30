@@ -32,8 +32,19 @@ vi.mock("@/lib/admin-guard", () => ({
 vi.mock("next/cache", () => ({
   revalidatePath: (...a: unknown[]) => revalidatePath(...a),
 }));
+const redirect = vi.fn();
+vi.mock("next/navigation", () => ({
+  redirect: (...a: unknown[]) => redirect(...a),
+}));
 
-import { approveClubAction, deleteRevokedTokenAction, rejectClubAction } from "../actions";
+import {
+  approveClubAction,
+  approveFromReviewAction,
+  deleteRevokedTokenAction,
+  reapproveClubAction,
+  rejectClubAction,
+  suspendClubAction,
+} from "../actions";
 
 function form(tokenId: string): FormData {
   const fd = new FormData();
@@ -168,5 +179,70 @@ describe("approveClubAction (#40): approval assigns the lodges requested at regi
     await approveClubAction(clubForm());
     expect(assignRequested).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("Unapprove and re-approve", () => {
+  beforeEach(() => {
+    clubFindUnique.mockReset();
+    clubUpdateMany.mockReset();
+    assignRequested.mockReset();
+    recordAudit.mockReset();
+    redirect.mockReset();
+    requireManager.mockReset();
+    requireManager.mockResolvedValue({ userId: "user-1", role: "MANAGER" });
+    clubUpdateMany.mockResolvedValue({ count: 1 });
+  });
+
+  function clubForm(): FormData {
+    const fd = new FormData();
+    fd.set("clubId", "club-1");
+    return fd;
+  }
+
+  it("unapproves only an APPROVED club, guarded in the update itself, and audits it", async () => {
+    await suspendClubAction(clubForm());
+    expect(clubUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "club-1", status: "APPROVED" },
+        data: expect.objectContaining({ status: "SUSPENDED", reviewedById: "user-1" }),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "club.suspend", clubId: "club-1" }));
+  });
+
+  it("re-approves only a SUSPENDED club and does NOT re-run the registration's lodge request", async () => {
+    clubFindUnique.mockResolvedValue({ requestedLodgeIds: ["lodge-a"] });
+    await reapproveClubAction(clubForm());
+    expect(clubUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "club-1", status: "SUSPENDED" },
+        data: expect.objectContaining({ status: "APPROVED" }),
+      }),
+    );
+    expect(assignRequested).not.toHaveBeenCalled();
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "club.reapprove" }));
+  });
+
+  it("audits nothing when the club was not in the status the move starts from", async () => {
+    clubUpdateMany.mockResolvedValue({ count: 0 });
+    await suspendClubAction(clubForm());
+    await reapproveClubAction(clubForm());
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("requires a manager", async () => {
+    requireManager.mockRejectedValue(new Error("Not authorized"));
+    await expect(suspendClubAction(clubForm())).rejects.toThrow("Not authorized");
+    expect(clubUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("the review page's approve is the same guarded approval, then shows the outcome", async () => {
+    clubFindUnique.mockResolvedValue({ requestedLodgeIds: [] });
+    await approveFromReviewAction(clubForm());
+    expect(clubUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "club-1", status: "PENDING" } }),
+    );
+    expect(redirect).toHaveBeenCalledWith("/clubs/review/club-1");
   });
 });

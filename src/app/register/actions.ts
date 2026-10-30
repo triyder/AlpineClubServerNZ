@@ -7,6 +7,7 @@ import { clientIpFromHeaders } from "@/lib/client-ip";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { issueClubToken } from "@/lib/issue-club-token";
+import { notifyNewClub } from "@/lib/club-notify";
 
 export interface RegisterState {
   error?: string;
@@ -79,6 +80,8 @@ export async function registerAction(
     return { success: true, created: false };
   }
   const issued = await issueClubToken({ clubId: result.club.id, source: "register" });
+  // Not awaited, as in the API route: never delays or fails the registration.
+  void notifyNewClub(result.club.id, "web");
   return {
     success: true,
     created: true,

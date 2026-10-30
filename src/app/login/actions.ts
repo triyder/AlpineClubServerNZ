@@ -10,6 +10,7 @@ import { loginSchema } from "@/lib/validation";
 import { recordAudit } from "@/lib/audit";
 import { clientIpFromHeaders } from "@/lib/client-ip";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { safeNextPath } from "@/lib/safe-next-path";
 
 export interface LoginState {
   error?: string;
@@ -89,5 +90,5 @@ export async function loginAction(
     metadata: { userId: user.id },
   });
 
-  redirect("/dashboard");
+  redirect(safeNextPath(formData.get("next")) ?? "/dashboard");
 }

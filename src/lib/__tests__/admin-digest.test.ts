@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const db = vi.hoisted(() => ({
   club: { findMany: vi.fn() },
+  otherLodge: { findMany: vi.fn() },
   apiToken: { findMany: vi.fn() },
   syncIssue: { findMany: vi.fn(), count: vi.fn() },
   systemSetting: { findUnique: vi.fn(), upsert: vi.fn() },
@@ -43,7 +44,15 @@ function nothing() {
 function something() {
   db.club.findMany
     .mockResolvedValueOnce([
-      { name: "Ruapehu Lodge", code: "RUAPEHU", location: "Whakapapa", createdAt: new Date("2026-10-21T20:00:00.000Z") },
+      {
+        name: "Ruapehu Lodge",
+        code: "RUAPEHU",
+        location: "Whakapapa",
+        contactEmail: "contact@ruapehu.nz",
+        status: "PENDING",
+        requestedLodgeIds: ["lodge-a"],
+        createdAt: new Date("2026-10-21T20:00:00.000Z"),
+      },
     ])
     .mockResolvedValueOnce([]);
   db.apiToken.findMany
@@ -55,6 +64,7 @@ function something() {
     { kind: "version-mismatch", firstSeenAt: new Date("2026-10-22T01:00:00.000Z"), occurrences: 3, club: { name: "Aorangi" } },
   ]);
   db.syncIssue.count.mockResolvedValue(2);
+  db.otherLodge.findMany.mockResolvedValue([{ id: "lodge-a", name: "Ruapehu Hut" }]);
 }
 
 describe("the administrator digest (#34)", () => {
@@ -90,7 +100,10 @@ describe("the administrator digest (#34)", () => {
     });
     const mail = sendMail.mock.calls[0][0];
     expect(mail.to).toBe("admin@example.nz, second@example.nz");
-    expect(mail.text).toContain("Ruapehu Lodge (RUAPEHU), Whakapapa");
+    expect(mail.text).toContain("New clubs (1)");
+    expect(mail.text).toContain(
+      "Ruapehu Lodge (RUAPEHU), Whakapapa, contact@ruapehu.nz — registered 2026-10-21 20:00 UTC, awaiting review; lodges requested: Ruapehu Hut",
+    );
     expect(mail.text).toContain("Aorangi: version-mismatch");
     expect(mail.text).toContain("https://srv.example.nz/clubs");
     // Only the key's non-secret prefix is named; never a whole key.
@@ -159,7 +172,7 @@ describe("the administrator digest (#34)", () => {
       { ...empty, reviewed: [{ name: "A <b>", code: "A", status: "APPROVED", reviewedAt: NOW }] },
       null,
     );
-    expect(mail.subject).toContain("0 new requests, 0 issues opened");
+    expect(mail.subject).toContain("0 new clubs, 0 issues opened");
     expect(mail.text).toContain("A <b> (A) — approved");
     expect(mail.html).toContain("A &lt;b&gt; (A)");
     expect(mail.text).toContain("Sync issues still open: 4");

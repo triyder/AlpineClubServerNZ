@@ -30,7 +30,15 @@ const STALE_CLAIM_AFTER_MS = 15 * 60 * 1000;
 export interface DigestContent {
   since: Date;
   until: Date;
-  registered: { name: string; code: string; location: string | null; createdAt: Date }[];
+  registered: {
+    name: string;
+    code: string;
+    location: string | null;
+    contactEmail: string;
+    status: string;
+    requestedLodges: string[];
+    createdAt: Date;
+  }[];
   reviewed: { name: string; code: string; status: string; reviewedAt: Date }[];
   tokensIssued: { club: string; name: string; prefix: string; createdAt: Date }[];
   tokensRevoked: { club: string; name: string; prefix: string; revokedAt: Date }[];
@@ -66,7 +74,15 @@ export async function collectDigest(since: Date, until: Date): Promise<DigestCon
     await Promise.all([
       prisma.club.findMany({
         where: { createdAt: window },
-        select: { name: true, code: true, location: true, createdAt: true },
+        select: {
+          name: true,
+          code: true,
+          location: true,
+          contactEmail: true,
+          status: true,
+          requestedLodgeIds: true,
+          createdAt: true,
+        },
         orderBy: { createdAt: "asc" },
       }),
       prisma.club.findMany({
@@ -91,10 +107,25 @@ export async function collectDigest(since: Date, until: Date): Promise<DigestCon
       }),
       prisma.syncIssue.count({ where: { status: "OPEN" } }),
     ]);
+  // The requested lodges by name, in one query for the whole period.
+  const requestedIds = [...new Set(registered.flatMap((c) => c.requestedLodgeIds))];
+  const lodgeNames = new Map(
+    requestedIds.length === 0
+      ? []
+      : (
+          await prisma.otherLodge.findMany({
+            where: { id: { in: requestedIds } },
+            select: { id: true, name: true },
+          })
+        ).map((l) => [l.id, l.name]),
+  );
   return {
     since,
     until,
-    registered,
+    registered: registered.map(({ requestedLodgeIds, ...c }) => ({
+      ...c,
+      requestedLodges: requestedLodgeIds.map((id) => lodgeNames.get(id) ?? "(a lodge since removed)"),
+    })),
     reviewed: reviewed.map((c) => ({ ...c, reviewedAt: c.reviewedAt as Date })),
     tokensIssued: tokensIssued.map((t) => ({
       club: t.club.name,
@@ -121,7 +152,7 @@ export async function collectDigest(since: Date, until: Date): Promise<DigestCon
 const day = (d: Date) => d.toISOString().slice(0, 10);
 const stamp = (d: Date) => d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
 
@@ -131,8 +162,13 @@ export function composeDigest(d: DigestContent, baseUrl: string | null): { subje
   const sections: { title: string; lines: string[] }[] = [];
   if (d.registered.length) {
     sections.push({
-      title: `New connection requests (${d.registered.length})`,
-      lines: d.registered.map((r) => `${r.name} (${r.code})${r.location ? `, ${r.location}` : ""} — registered ${stamp(r.createdAt)}, awaiting review`),
+      title: `New clubs (${d.registered.length})`,
+      lines: d.registered.map(
+        (r) =>
+          `${r.name} (${r.code})${r.location ? `, ${r.location}` : ""}, ${r.contactEmail} — registered ${stamp(r.createdAt)}, ${
+            r.status === "PENDING" ? "awaiting review" : `now ${r.status.toLowerCase()}`
+          }${r.requestedLodges.length > 0 ? `; lodges requested: ${r.requestedLodges.join(", ")}` : ""}`,
+      ),
     });
   }
   if (d.reviewed.length) {
@@ -160,7 +196,7 @@ export function composeDigest(d: DigestContent, baseUrl: string | null): { subje
     });
   }
   const openLine = `Sync issues still open: ${d.issuesStillOpen}`;
-  const subject = `Alpine Club server digest, ${day(d.until)}: ${c.registered} new request${c.registered === 1 ? "" : "s"}, ${c.issuesOpened} issue${c.issuesOpened === 1 ? "" : "s"} opened`;
+  const subject = `Alpine Club server digest, ${day(d.until)}: ${c.registered} new club${c.registered === 1 ? "" : "s"}, ${c.issuesOpened} issue${c.issuesOpened === 1 ? "" : "s"} opened`;
   const header = `What happened on the Alpine Club server between ${stamp(d.since)} and ${stamp(d.until)}.`;
   const links = baseUrl
     ? `Connections: ${baseUrl}/clubs\nIssues: ${baseUrl}/issues`
@@ -199,8 +235,11 @@ async function writeWatermark(until: Date): Promise<void> {
   });
 }
 
-/** Who receives it: the address under Settings → Email, else every ADMIN user. */
-async function recipients(digestTo: string): Promise<string[]> {
+/**
+ * Who receives it: the address under Settings → Email, else every ADMIN user.
+ * Also who is told the moment a club registers (`club-notify.ts`).
+ */
+export async function recipients(digestTo: string): Promise<string[]> {
   if (digestTo) return [digestTo];
   const admins = await prisma.user.findMany({ where: { role: "ADMIN" }, select: { email: true } });
   return admins.map((a) => a.email);
