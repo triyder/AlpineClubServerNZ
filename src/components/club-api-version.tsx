@@ -1,11 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { clubApiVersionStatus } from "@/lib/club-api-version";
-
-/** `2026-10-04 12:03 UTC` — the audit screen's style, to the minute. */
-function stamp(date: Date): string {
-  return `${date.toISOString().replace("T", " ").slice(0, 16)} UTC`;
-}
+import { formatNzDateTime as stamp } from "@/lib/nz-time";
 
 /**
  * A club's last reported API version, beside what that means: can it sync, and

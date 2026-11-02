@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatNzDateTime } from "@/lib/nz-time";
 
 export const dynamic = "force-dynamic";
 
@@ -134,7 +135,7 @@ export default async function AuditPage({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Time (UTC)</TableHead>
+                      <TableHead>Time (NZ)</TableHead>
                       <TableHead>Action</TableHead>
                       <TableHead>Outcome</TableHead>
                       <TableHead>Club</TableHead>
@@ -147,7 +148,7 @@ export default async function AuditPage({
                     {entries.map((e) => (
                       <TableRow key={e.id}>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {e.createdAt.toISOString().replace("T", " ").slice(0, 19)}
+                          {formatNzDateTime(e.createdAt, { seconds: true })}
                         </TableCell>
                         <TableCell className="font-medium">{e.action}</TableCell>
                         <TableCell>

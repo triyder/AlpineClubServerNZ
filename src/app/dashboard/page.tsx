@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatNzDateTime } from "@/lib/nz-time";
 
 export const dynamic = "force-dynamic";
 
@@ -89,8 +90,8 @@ export default async function DashboardPage() {
                         </span>
                       ) : null}
                     </div>
-                    <time className="text-muted-foreground">
-                      {a.createdAt.toISOString()}
+                    <time className="text-muted-foreground" dateTime={a.createdAt.toISOString()}>
+                      {formatNzDateTime(a.createdAt, { seconds: true })}
                     </time>
                   </li>
                 ))}

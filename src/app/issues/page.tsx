@@ -23,6 +23,7 @@ import {
 import { SERVER_API_VERSION, apiVersionsMatch } from "@/lib/api-version";
 import { VERSION_MISMATCH_KIND } from "@/lib/sync-issues";
 import { clearIssueAction } from "./actions";
+import { formatNzDateTime } from "@/lib/nz-time";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 function stamp(date: Date | null): string {
-  return date ? date.toISOString().replace("T", " ").slice(0, 19) : "—";
+  return date ? formatNzDateTime(date, { seconds: true }) : "—";
 }
 
 export default async function IssuesPage({
@@ -127,8 +128,8 @@ export default async function IssuesPage({
                       <TableHead>Lodges</TableHead>
                       <TableHead>Club version</TableHead>
                       <TableHead>Server version</TableHead>
-                      <TableHead>First seen (UTC)</TableHead>
-                      <TableHead>Last seen (UTC)</TableHead>
+                      <TableHead>First seen (NZ)</TableHead>
+                      <TableHead>Last seen (NZ)</TableHead>
                       <TableHead className="text-right">Times</TableHead>
                       <TableHead>
                         {showCleared ? "Cleared" : "Action"}

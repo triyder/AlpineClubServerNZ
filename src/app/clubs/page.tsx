@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import type { ClubStatus } from "@prisma/client";
+import { formatNzDate } from "@/lib/nz-time";
 
 export const dynamic = "force-dynamic";
 
@@ -243,7 +244,7 @@ export default async function ClubsPage() {
                               <div className="flex items-center gap-3">
                                 <span className="text-xs text-muted-foreground">
                                   {t.lastUsedAt
-                                    ? `last used ${t.lastUsedAt.toISOString().slice(0, 10)}`
+                                    ? `last used ${formatNzDate(t.lastUsedAt)}`
                                     : "never used"}
                                 </span>
                                 {canManage && !t.revokedAt ? (
