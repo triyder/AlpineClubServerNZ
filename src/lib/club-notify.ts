@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit";
 import { escapeHtml, recipients } from "@/lib/admin-digest";
 import { loadMailSettings, mailConfigured, sendMail } from "@/lib/mail";
 import { stripControlChars } from "@/lib/control-chars";
+import { formatNzDateTime } from "@/lib/nz-time";
 
 /**
  * Tell the administrators the moment a club registers, with a link to review
@@ -65,7 +66,7 @@ export function composeNewClubMail(
     ["Location", club.location ? one(club.location) : "—"],
     ["Contact email", one(club.contactEmail)],
     ["Lodges requested", requestedLodges.length > 0 ? requestedLodges.map(one).join(", ") : "none"],
-    ["Registered", `${club.createdAt.toISOString().replace("T", " ").slice(0, 16)} UTC, ${source === "web" ? "registration form" : "API"}`],
+    ["Registered", `${formatNzDateTime(club.createdAt)}, ${source === "web" ? "registration form" : "API"}`],
   ];
   // Notes may run to several lines; each is kept, each stripped.
   const notes = club.registrationNotes

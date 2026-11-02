@@ -79,7 +79,7 @@ describe("ClubApiVersion display", () => {
     expect(out).not.toContain("last checked");
   });
 
-  it("shows when the club last checked, in UTC, to the minute", () => {
-    expect(html("2.0")).toContain("last checked 2026-10-04 12:03 UTC");
+  it("shows when the club last checked, in New Zealand time, to the minute", () => {
+    expect(html("2.0")).toContain("last checked 2026-10-05 01:03 NZDT");
   });
 });

@@ -13,13 +13,9 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatNzDateTime as stamp } from "@/lib/nz-time";
 
 export const dynamic = "force-dynamic";
-
-/** `2026-10-04 12:03 UTC` — the audit screen's style, to the minute. */
-function stamp(date: Date): string {
-  return `${date.toISOString().replace("T", " ").slice(0, 16)} UTC`;
-}
 
 /**
  * One club's connection request: the page a new-club email links to.

@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatNzDate } from "@/lib/nz-time";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function ProfilePage() {
             <div className="flex items-center justify-between border-t border-border pt-3">
               <span className="text-muted-foreground">Member since</span>
               <span className="font-medium">
-                {user.createdAt.toISOString().slice(0, 10)}
+                {formatNzDate(user.createdAt)}
               </span>
             </div>
           </CardContent>
@@ -72,9 +73,7 @@ export default async function ProfilePage() {
             <CardTitle>Security</CardTitle>
             <CardDescription>
               {user.passwordChangedAt
-                ? `Password last changed ${user.passwordChangedAt
-                    .toISOString()
-                    .slice(0, 10)}.`
+                ? `Password last changed ${formatNzDate(user.passwordChangedAt)}.`
                 : "Your password has not been changed since the account was created."}
             </CardDescription>
           </CardHeader>

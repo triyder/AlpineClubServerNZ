@@ -102,7 +102,7 @@ describe("the administrator digest (#34)", () => {
     expect(mail.to).toBe("admin@example.nz, second@example.nz");
     expect(mail.text).toContain("New clubs (1)");
     expect(mail.text).toContain(
-      "Ruapehu Lodge (RUAPEHU), Whakapapa, contact@ruapehu.nz — registered 2026-10-21 20:00 UTC, awaiting review; lodges requested: Ruapehu Hut",
+      "Ruapehu Lodge (RUAPEHU), Whakapapa, contact@ruapehu.nz — registered 2026-10-22 09:00 NZDT, awaiting review; lodges requested: Ruapehu Hut",
     );
     expect(mail.text).toContain("Aorangi: version-mismatch");
     expect(mail.text).toContain("https://srv.example.nz/clubs");

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { recordAudit } from "@/lib/audit";
 import { loadMailSettings, mailConfigured, MailNotConfiguredError, sendMail } from "@/lib/mail";
+import { formatNzDate, formatNzDateTime } from "@/lib/nz-time";
 
 /**
  * The administrator's digest (#34): what happened on this server since the
@@ -149,8 +150,9 @@ export async function collectDigest(since: Date, until: Date): Promise<DigestCon
   };
 }
 
-const day = (d: Date) => d.toISOString().slice(0, 10);
-const stamp = (d: Date) => d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+// New Zealand time, as on the console (nz-time.ts).
+const day = formatNzDate;
+const stamp = (d: Date) => formatNzDateTime(d);
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
