@@ -109,17 +109,39 @@ export default async function ClubsPage() {
               <Card key={club.id} id={`club-${club.id}`}>
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        {club.name}
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {club.code}
-                        </span>
-                      </CardTitle>
-                      <CardDescription>
-                        {club.location ? `${club.location} · ` : ""}
-                        {club.contactEmail}
-                      </CardDescription>
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          {club.name}
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {club.code}
+                          </span>
+                        </CardTitle>
+                        <CardDescription>
+                          {club.location ? `${club.location} · ` : ""}
+                          {club.contactEmail}
+                        </CardDescription>
+                      </div>
+                      {/* Lodges sit under the name, beside the status column,
+                          rather than in a band of their own below it. */}
+                      {club.status === "APPROVED" ? (
+                        <ClubLodgesSelect
+                          // Re-keyed on the saved list so a save (which refreshes
+                          // this page) remounts the component: that resets its
+                          // unsaved-changes state, and the refreshed chips are the
+                          // confirmation — it shows no "Saved" message of its own.
+                          key={`${club.id}:${lodgeOptions
+                            .filter((l) => l.ownerClubId === club.id)
+                            .map((l) => l.id)
+                            .join(",")}`}
+                          clubId={club.id}
+                          options={lodgeOptions}
+                          initialSelectedIds={lodgeOptions
+                            .filter((l) => l.ownerClubId === club.id)
+                            .map((l) => l.id)}
+                          canManage={canManage}
+                        />
+                      ) : null}
                     </div>
                     {/* The status and API version share the top-right corner, so
                         the panel spends no rows of its own on them. */}
@@ -136,25 +158,6 @@ export default async function ClubsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {club.status === "APPROVED" ? (
-                    <ClubLodgesSelect
-                      // Re-keyed on the saved list so a save (which refreshes this
-                      // page) remounts the component: that resets its
-                      // unsaved-changes state, and the refreshed chips are the
-                      // confirmation — it shows no "Saved" message of its own.
-                      key={`${club.id}:${lodgeOptions
-                        .filter((l) => l.ownerClubId === club.id)
-                        .map((l) => l.id)
-                        .join(",")}`}
-                      clubId={club.id}
-                      options={lodgeOptions}
-                      initialSelectedIds={lodgeOptions
-                        .filter((l) => l.ownerClubId === club.id)
-                        .map((l) => l.id)}
-                      canManage={canManage}
-                    />
-                  ) : null}
-
                   {club.status === "SUSPENDED" ? (
                     <div className="space-y-2 text-sm">
                       <p className="text-muted-foreground">
