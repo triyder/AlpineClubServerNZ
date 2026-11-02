@@ -150,8 +150,10 @@ export function ClubLodgesSelect({
       )}
 
       {canManage ? (
-        <>
-          <div className="relative">
+        // Save sits to the right of the dropdown, the same row as "Generate API
+        // key", so the picker costs one line.
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:max-w-56">
             <Button
               ref={triggerRef}
               type="button"
@@ -161,7 +163,7 @@ export function ClubLodgesSelect({
               aria-controls={listId}
               disabled={saving}
               onClick={() => setOpen((v) => !v)}
-              className="w-full justify-between sm:w-72"
+              className="w-full justify-between"
             >
               {options.length === 0 ? "No lodges to choose from" : "Select lodges"}
               <ChevronDown className="h-4 w-4" />
@@ -227,20 +229,19 @@ export function ClubLodgesSelect({
             ) : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              size="sm"
-              disabled={!dirty || saving}
-              onClick={() => void save()}
-            >
-              {saving ? "Saving…" : "Save lodges"}
-            </Button>
-            {dirty && !saving ? (
-              <span className="text-xs text-muted-foreground">Unsaved changes</span>
-            ) : null}
-          </div>
-        </>
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            disabled={!dirty || saving}
+            onClick={() => void save()}
+          >
+            {saving ? "Saving…" : "Save lodges"}
+          </Button>
+          {dirty && !saving ? (
+            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+          ) : null}
+        </div>
       ) : null}
 
       {error ? (
