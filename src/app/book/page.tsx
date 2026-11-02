@@ -137,7 +137,7 @@ function Planner({
         stayNights={stay}
         rows={rows}
         guests={partySize(query.guests)}
-        caption={`Free beds, ${nightsInWords(nights)}`}
+        caption={`Available beds, ${nightsInWords(nights)}`}
         panels={results.map((r) => ({ id: r.lodge.id, panel: <ChosenLodgePanel result={r} query={query} /> }))}
         initialId={pick?.lodge.id ?? null}
         // Lodges with no booking page or email start hidden, unless asked for
