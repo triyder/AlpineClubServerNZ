@@ -1,6 +1,7 @@
 # Plan: one-step club connection (server + booking app)
 
-Status: draft for review, 2026-10-30. Covers AlpineClubServerNZ (this repo) and
+Status: built. Server in #44 and #45, booking app in AlpineClubBookingsNZ#97
+(all merged by 2026-11-02). Covers AlpineClubServerNZ (this repo) and
 AlpineClubBookingsNZ (the booking app).
 
 ## Decision: auto-approval (server item 1) — **option A chosen (2026-10-30)**
@@ -133,8 +134,11 @@ Follow that repo's AGENTS.md:
   share one function that keeps the settings lock, the ownership check, the
   FOR UPDATE row lock, the 409 on a unique-key clash, and the audit entry.
 - Outcomes:
-  - **1 active local lodge, 1 owned central lodge, not linked yet:** link them
-    automatically and show "Linked *X* to *Y* — change".
+  - **1 active local lodge, 1 owned central lodge, not linked yet:** open the
+    same dialog with that pair preselected. Nothing is linked until **Save
+    links** is pressed. *As built (AlpineClubBookingsNZ#97):* the booking app's
+    owner decision #4262 requires every club to link explicitly (INV-INT-030),
+    so the pair is not saved automatically; confirmed 2026-11-02.
   - **Anything else with owned lodges** (2 or more local lodges, or 2 or more owned):
     open a Dialog, copying the pattern in `other-lodges-panel.tsx:277-307`.
     - Each local lodge gets a select of the owned central lodges, plus "Not linked".
